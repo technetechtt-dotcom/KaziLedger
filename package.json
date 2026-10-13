@@ -1,0 +1,64 @@
+{
+  "name": "business-operations-app",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@tanstack/react-query": "^5.90.21",
+    "@testing-library/jest-dom": "^5.16.4",
+    "@testing-library/react": "^13.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "crypto-js": "^4.2.0",
+    "date-fns": "^2.29.3",
+    "firebase": "^12.2.1",
+    "formik": "^2.4.9",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^2.5.2",
+    "react": "^18.2.0",
+    "react-camera-pro": "^1.0.0",
+    "react-datepicker": "^4.10.0",
+    "react-dom": "^18.2.0",
+    "react-dropzone": "^14.2.3",
+    "react-google-recaptcha": "^3.1.0",
+    "react-icons": "^4.7.1",
+    "react-modal": "^3.16.1",
+    "react-router-dom": "^6.8.1",
+    "react-scripts": "5.0.1",
+    "react-toastify": "^9.0.8",
+    "recharts": "^2.5.0",
+    "styled-components": "^5.3.6",
+    "tesseract.js": "^4.0.2",
+    "web-vitals": "^2.1.4",
+    "yup": "^1.7.1"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "build:pwa": "react-scripts build && npm run generate-sw",
+    "generate-sw": "node scripts/generate-sw.js"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.24",
+    "postcss-selector-parser": "^6.1.2",
+    "typescript": "^5.9.2"
+  }
+}

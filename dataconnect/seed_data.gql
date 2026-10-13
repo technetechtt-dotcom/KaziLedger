@@ -1,0 +1,44 @@
+mutation SeedData @auth(level: USER) {
+  user_upsertMany(data: [
+    {
+      displayName: "John Doe",
+      email: "john.doe@example.com"
+    },
+    {
+      displayName: "Jane Smith",
+      email: "jane.smith@example.com"
+    }
+  ])
+  inventoryItem_upsertMany(data: [
+    {
+      name: "Example Item 1",
+      description: "An example inventory item",
+      stockQuantity: 100,
+      unitPrice: 25.0,
+      costPrice: 12.5
+    },
+    {
+      name: "Example Item 2",
+      description: "Another example inventory item",
+      stockQuantity: 50,
+      unitPrice: 50.0,
+      costPrice: 25.0
+    }
+  ])
+  quote_upsertMany(data: [
+    {
+      clientName: "Example Client 1",
+      clientEmail: "client1@example.com",
+      quoteNumber: "QUOTE-001",
+      status: "DRAFT",
+      totalAmount: 100.0
+    },
+    {
+      clientName: "Example Client 2",
+      clientEmail: "client2@example.com",
+      quoteNumber: "QUOTE-002",
+      status: "SENT",
+      totalAmount: 200.0
+    }
+  ])
+}

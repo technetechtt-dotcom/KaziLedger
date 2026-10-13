@@ -1,0 +1,31 @@
+mutation CreateInventoryItem @auth(level: USER) {
+  inventoryItem_insert(data: {
+    name: "New Item",
+    stockQuantity: 10,
+    unitPrice: 25.50,
+    costPrice: 12.75,
+    userId_expr: "auth.uid"
+  })
+}
+
+query ListInventoryItems @auth(level: USER) {
+  inventoryItems {
+    id
+    name
+    stockQuantity
+    unitPrice
+  }
+}
+
+mutation UpdateUnitPrice($id: UUID!, $unitPrice: Float!) @auth(level: USER) {
+  inventoryItem_update(
+    id: $id
+    data: {
+      unitPrice: $unitPrice
+    }
+  )
+}
+
+mutation DeleteInventoryItem($id: UUID!) @auth(level: USER) {
+  inventoryItem_delete(id: $id)
+}

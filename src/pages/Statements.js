@@ -692,7 +692,7 @@ export default function Statements() {
           <option value="paid">Fully Paid</option>
         </FilterSelect>
         
-        <RefreshButton onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+        <RefreshButton onClick={() => toast.info("Statements are automatically synchronized with the latest data.")} title="Live synchronization status">
           <FiRefreshCw />
           Refresh
         </RefreshButton>

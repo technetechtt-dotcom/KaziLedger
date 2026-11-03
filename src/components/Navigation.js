@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import { 
@@ -13,7 +13,8 @@ import {
   FiSettings,
   FiShield,
   FiCreditCard,
-  FiLogOut
+  FiLogOut,
+  FiLayers
 } from 'react-icons/fi';
 import { signOutUser } from '../firebase/auth';
 import { logAnalyticsEvent, AnalyticsEvents } from '../utils/analytics';
@@ -209,7 +210,8 @@ const navigationItems = [
   { path: '/customers', icon: FiUsers, label: 'Customers' },
   { path: '/appointments', icon: FiCalendar, label: 'Appointments' },
   { path: '/compliance', icon: FiShield, label: 'Compliance' },
-  { path: '/settings', icon: FiSettings, label: 'Settings' }
+  { path: '/settings', icon: FiSettings, label: 'Settings' },
+  { path: '/templates', icon: FiLayers, label: 'Document Templates' }
 ];
 
 const bottomNavItems = [
@@ -222,6 +224,15 @@ const bottomNavItems = [
 export default function Navigation({ isMobileMenuOpen, onCloseMobileMenu }) {
   const location = useLocation();
   const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return undefined;
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') closeMobileMenu();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isMobileMenuOpen, onCloseMobileMenu]);
 
   const closeMobileMenu = () => {
     if (onCloseMobileMenu) {
@@ -251,7 +262,7 @@ export default function Navigation({ isMobileMenuOpen, onCloseMobileMenu }) {
   return (
     <>
       <Overlay show={isMobileMenuOpen} onClick={closeMobileMenu} />
-      <NavigationContainer className={isMobileMenuOpen ? 'mobile-open' : ''}>
+      <NavigationContainer id="kazi-sidebar" aria-label="Main navigation" className={isMobileMenuOpen ? 'mobile-open' : ''}>
         <NavContent>
           <NavSection>
             <NavTitle>Main</NavTitle>

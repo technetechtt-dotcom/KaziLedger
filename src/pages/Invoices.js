@@ -1002,7 +1002,7 @@ export default function Invoices() {
                   </Select>
                   <button
                     type="button"
-                    onClick={() => window.open('/customers', '_blank')}
+                    onClick={() => { window.location.assign('/customers'); }}
                     style={{ 
                       padding: '0.5rem', 
                       background: '#3b82f6', 

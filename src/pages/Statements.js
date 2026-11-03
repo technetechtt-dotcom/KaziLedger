@@ -692,7 +692,7 @@ export default function Statements() {
           <option value="paid">Fully Paid</option>
         </FilterSelect>
         
-        <RefreshButton onClick={() => window.location.reload()}>
+        <RefreshButton onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); }}>
           <FiRefreshCw />
           Refresh
         </RefreshButton>

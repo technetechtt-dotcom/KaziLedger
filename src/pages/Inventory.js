@@ -560,13 +560,6 @@ export default function Inventory() {
     return matchesSearch && matchesType;
   });
 
-  // Get items by type
-  const getItemsByType = (type) => {
-    return products.filter(product => 
-      product.itemType === type || (!product.itemType && type === ITEM_TYPES.PRODUCT)
-    );
-  };
-
   const getItemTypeIcon = (type) => {
     switch (type) {
       case ITEM_TYPES.PRODUCT:

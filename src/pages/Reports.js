@@ -363,10 +363,50 @@ export default function Reports() {
     }));
   };
 
-  const handleExportSubmit = () => {
-    console.log('Exporting with settings:', exportSettings);
-    generateReport();
-    setShowExportModal(false);
+  const handleExportSubmit = async () => {
+    try {
+      const report = calculateDetailedMetrics();
+      const rows = [
+        ['Section', 'Metric', 'Amount'],
+        ['Income', 'Total income', report.income.total],
+        ['Expenses', 'Total expenses', report.expenses.total],
+        ['Invoices', 'Paid invoices', report.invoices.paid.amount],
+        ['Invoices', 'Pending invoices', report.invoices.pending.amount],
+        ['Invoices', 'Overdue invoices', report.invoices.overdue.amount],
+        ['Profit and loss', 'Net profit', report.netProfit],
+      ];
+      const format = String(exportSettings.format || 'csv').toLowerCase();
+      const filename = `KaziLedger_Report_${activePeriod}_${new Date().toISOString().slice(0, 10)}`;
+      if (format === 'pdf') {
+        const {jsPDF} = await import('jspdf');
+        const pdf = new jsPDF();
+        pdf.setFontSize(17);
+        pdf.text('KaziLedger Financial Report', 14, 20);
+        pdf.setFontSize(10);
+        pdf.text(`Period: ${activePeriod}`, 14, 29);
+        rows.slice(1).forEach(([section, metric, value], index) => {
+          pdf.text(`${section} - ${metric}: ${Number(value || 0).toFixed(2)}`, 14, 42 + index * 8);
+        });
+        pdf.save(`${filename}.pdf`);
+      } else if (format === 'csv') {
+        const csv = rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+        const blob = new Blob(['\uFEFF', csv], {type: 'text/csv;charset=utf-8'});
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${filename}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      } else {
+        throw new Error('Unsupported report format');
+      }
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Report export failed:', error);
+      alert('Could not export the report. Please try again.');
+    }
   };
 
   // Get date range based on selected period

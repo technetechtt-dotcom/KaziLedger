@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-escape -- Regex separators retained for readability. */
 import * as Yup from 'yup';
 
 // Common validation schemas

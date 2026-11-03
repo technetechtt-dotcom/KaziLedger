@@ -399,49 +399,9 @@ exports.createInvoiceFromQuote = onDocumentUpdated(
 );
 
 // Send payment reminders
-exports.sendPaymentReminders = secureCallable(async (req, res) => {
-  try {
-    const db = admin.firestore();
-    const now = new Date();
-    const reminderDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 7 days ago
-    
-    // Get all users
-    const usersSnapshot = await db.collection('users').get();
-    
-    for (const userDoc of usersSnapshot.docs) {
-      const userId = userDoc.id;
-      
-      // Get overdue invoices
-      const invoicesRef = db.collection(`users/${userId}/invoices`);
-      const overdueInvoices = await invoicesRef
-        .where('status', '==', 'pending')
-        .where('dueDate', '<=', reminderDate)
-        .get();
-      
-      for (const invoiceDoc of overdueInvoices.docs) {
-        const invoice = invoiceDoc.data();
-        
-        // This would integrate with email service
-        logger.info('Payment reminder would be sent:', {
-          userId,
-          invoiceId: invoiceDoc.id,
-          invoiceNumber: invoice.invoiceNumber,
-          customerEmail: invoice.customer?.email,
-          amount: invoice.total
-        });
-        
-        // Update reminder sent date
-        await invoiceDoc.ref.update({
-          lastReminderSent: admin.firestore.FieldValue.serverTimestamp()
-        });
-      }
-    }
-    
-    res.json({message: 'Payment reminders processed'});
-  } catch (error) {
-    logger.error('Error sending payment reminders:', error);
-    res.status(500).json({error: 'Failed to send reminders'});
-  }
+// No reminders are marked as sent until a real, audited delivery provider is configured.
+exports.sendPaymentReminders = secureCallable(async () => {
+  throw new HttpsError('failed-precondition', 'Payment reminders are not configured');
 }, {adminOnly: true});
 
 // Backup business data

@@ -1,0 +1,9 @@
+{
+  "short_name": "BusinessApp",
+  "name": "Business Operations App",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#3b82f6",
+  "background_color": "#ffffff",
+  "description": "Manage your daily business operations with invoices, quotes, receipts, and more"
+}

@@ -1,0 +1,75 @@
+type User @table {
+  displayName: String!
+  email: String!
+  createdAt: Timestamp!
+  businessName: String
+  contactNumber: String
+}
+
+type Transaction @table {
+  user: User!
+  type: String!
+  amount: Float!
+  date: Date!
+  description: String!
+  createdAt: Timestamp!
+  category: String
+  referenceNumber: String
+}
+
+type InventoryItem @table {
+  user: User!
+  name: String!
+  unitPrice: Float!
+  costPrice: Float!
+  stockQuantity: Int!
+  createdAt: Timestamp!
+  description: String
+  SKU: String
+}
+
+type Quote @table {
+  user: User!
+  quoteNumber: String!
+  clientName: String!
+  issueDate: Date!
+  totalAmount: Float!
+  status: String!
+  createdAt: Timestamp!
+  clientEmail: String
+  validUntilDate: Date
+  notes: String
+}
+
+type QuoteItem @table {
+  quote: Quote!
+  inventoryItem: InventoryItem
+  quantity: Int!
+  unitPrice: Float!
+  lineTotal: Float!
+  description: String
+}
+
+type Invoice @table {
+  user: User!
+  quote: Quote
+  invoiceNumber: String!
+  clientName: String!
+  issueDate: Date!
+  dueDate: Date!
+  totalAmount: Float!
+  paymentStatus: String!
+  createdAt: Timestamp!
+  clientEmail: String
+  purchaseOrderNumber: String
+  notes: String
+}
+
+type InvoiceItem @table {
+  invoice: Invoice!
+  inventoryItem: InventoryItem
+  quantity: Int!
+  unitPrice: Float!
+  lineTotal: Float!
+  description: String
+}

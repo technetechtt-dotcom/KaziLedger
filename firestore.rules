@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBusinessOwner(businessId) {
+      // Business documents are keyed by the owner's Firebase Auth uid
+      return isSignedIn() && request.auth.uid == businessId;
+    }
+
+    // Per-user operational data (finance, inventory, accounting extensions)
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Tenant business tree (appointments, compliance, branding)
+    match /businesses/{businessId} {
+      allow read, write: if isBusinessOwner(businessId);
+
+      match /{document=**} {
+        allow read, write: if isBusinessOwner(businessId);
+      }
+    }
+
+    // Backups created by Cloud Functions — owner can read own backups only
+    match /backups/{backupId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if false; // only Admin SDK / Functions
+      allow update, delete: if false;
+    }
+
+    // Deny everything else by default (no open catch-all)
+  }
+}

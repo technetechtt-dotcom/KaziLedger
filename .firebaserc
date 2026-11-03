@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "ivan": "kaziledger",
+    "default": "kaziledger"
+  },
+  "targets": {},
+  "etags": {}
+}

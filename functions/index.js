@@ -7,7 +7,7 @@
  * See a full list of supported triggers at https://firebase.google.com/docs/functions
  */
 
-const {setGlobalOptions} = require("firebase-functions");
+const {setGlobalOptions} = require("firebase-functions/v2");
 const logger = require("firebase-functions/logger");
 
 // For cost control, you can set the maximum number of containers that can be
@@ -75,7 +75,17 @@ exports.generateQuoteNumber = secureCallable(async (req, res) => {
     const counterRef = db.doc(`users/${userId}/counters/quotes`);
     const nextNumber = await db.runTransaction(async transaction => {
       const counter = await transaction.get(counterRef);
-      const next = (counter.exists ? counter.data().value || 0 : 0) + 1;
+      // Seed the counter from historical documents before first use to avoid
+      // recycling numbers already issued before migration.
+      let baseline = counter.exists ? counter.data().value || 0 : 0;
+      if (!counter.exists) {
+        const prior = await transaction.get(db.collection(`users/${userId}/quotes`).select('quoteNumber'));
+        for (const record of prior.docs) {
+          const match = /^Q-(\\d+)$/.exec(String(record.get('quoteNumber') || ''));
+          if (match) baseline = Math.max(baseline, Number(match[1]));
+        }
+      }
+      const next = baseline + 1;
       transaction.set(counterRef, {value: next, updatedAt: admin.firestore.FieldValue.serverTimestamp()});
       return next;
     });
@@ -95,7 +105,17 @@ exports.generateInvoiceNumber = secureCallable(async (req, res) => {
     const counterRef = db.doc(`users/${userId}/counters/invoices`);
     const nextNumber = await db.runTransaction(async transaction => {
       const counter = await transaction.get(counterRef);
-      const next = (counter.exists ? counter.data().value || 0 : 0) + 1;
+      // Seed the counter from historical documents before first use to avoid
+      // recycling numbers already issued before migration.
+      let baseline = counter.exists ? counter.data().value || 0 : 0;
+      if (!counter.exists) {
+        const prior = await transaction.get(db.collection(`users/${userId}/invoices`).select('invoiceNumber'));
+        for (const record of prior.docs) {
+          const match = /^INV-(\\d+)$/.exec(String(record.get('invoiceNumber') || ''));
+          if (match) baseline = Math.max(baseline, Number(match[1]));
+        }
+      }
+      const next = baseline + 1;
       transaction.set(counterRef, {value: next, updatedAt: admin.firestore.FieldValue.serverTimestamp()});
       return next;
     });

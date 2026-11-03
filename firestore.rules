@@ -1,9 +1,17 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow read/write access to authenticated users
+    // Documents belong to their authenticated user. Never trust an arbitrary
+    // userId supplied by the client.
+    match /users/{userId} {
+      allow read, create, update, delete: if request.auth != null && request.auth.uid == userId;
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    // Internal backups and all other paths are server-only.
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

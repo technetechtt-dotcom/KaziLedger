@@ -128,7 +128,7 @@ function AppContent() {
       <Navigation isMobileMenuOpen={isMobileMenuOpen} onCloseMobileMenu={() => setIsMobileMenuOpen(false)} />
       <MainContent>
         <TopHeader>
-          <HamburgerButton onClick={toggleMobileMenu} aria-label="Toggle mobile menu">
+          <HamburgerButton onClick={toggleMobileMenu} aria-label="Toggle mobile menu" aria-expanded={isMobileMenuOpen} aria-controls="kazi-sidebar">
             <FiMenu aria-hidden="true" />
           </HamburgerButton>
         </TopHeader>
@@ -152,6 +152,7 @@ function AppContent() {
               <Route path="/compliance" element={<Compliance />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/templates" element={<DocumentTemplates />} />
+              <Route path="*" element={<div role="alert" style={{padding: '2rem'}}><h1>Page not found</h1><p>The requested page does not exist.</p><a href="/">Return to dashboard</a></div>} />
             </Routes>
           </Suspense>
         </MobileContent>

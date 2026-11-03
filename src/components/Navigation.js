@@ -228,7 +228,7 @@ export default function Navigation({ isMobileMenuOpen, onCloseMobileMenu }) {
   useEffect(() => {
     if (!isMobileMenuOpen) return undefined;
     const handleEscape = (event) => {
-      if (event.key === 'Escape') closeMobileMenu();
+      if (event.key === 'Escape' && onCloseMobileMenu) onCloseMobileMenu();
     };
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);

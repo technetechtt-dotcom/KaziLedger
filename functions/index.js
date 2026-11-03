@@ -81,7 +81,7 @@ exports.generateQuoteNumber = secureCallable(async (req, res) => {
       if (!counter.exists) {
         const prior = await transaction.get(db.collection(`users/${userId}/quotes`).select('quoteNumber'));
         for (const record of prior.docs) {
-          const match = /^Q-(\\d+)$/.exec(String(record.get('quoteNumber') || ''));
+          const match = /^Q-(\d+)$/.exec(String(record.get('quoteNumber') || ''));
           if (match) baseline = Math.max(baseline, Number(match[1]));
         }
       }
@@ -111,7 +111,7 @@ exports.generateInvoiceNumber = secureCallable(async (req, res) => {
       if (!counter.exists) {
         const prior = await transaction.get(db.collection(`users/${userId}/invoices`).select('invoiceNumber'));
         for (const record of prior.docs) {
-          const match = /^INV-(\\d+)$/.exec(String(record.get('invoiceNumber') || ''));
+          const match = /^INV-(\d+)$/.exec(String(record.get('invoiceNumber') || ''));
           if (match) baseline = Math.max(baseline, Number(match[1]));
         }
       }

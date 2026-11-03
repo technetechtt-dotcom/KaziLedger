@@ -7,6 +7,11 @@ jest.mock('../providers/AppProviders', () => ({
   AppProviders: ({ children }) => <div data-testid="app-providers">{children}</div>,
 }));
 
+jest.mock('../context/FirebaseBusinessContext', () => ({
+  useFirebaseBusiness: () => ({isAuthenticated: false, isOnboardingComplete: false, loading: false}),
+}));
+jest.mock('../pages/FirebaseLogin', () => () => <div>Sign in</div>);
+
 describe('App Component', () => {
   it('renders without crashing', () => {
     render(<App />);

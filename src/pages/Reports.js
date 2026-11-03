@@ -337,7 +337,7 @@ export default function Reports() {
     format: 'PDF',
     dateRange: 'Last 30 Days',
     reportType: 'Profit & Loss',
-    currency: 'USD',
+    currency: 'ZAR',
     detailedTransactions: false,
     customLogo: false
   });

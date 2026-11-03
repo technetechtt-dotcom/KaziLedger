@@ -8,7 +8,6 @@
  */
 
 const {setGlobalOptions} = require("firebase-functions");
-const {onRequest} = require("firebase-functions/https");
 const logger = require("firebase-functions/logger");
 
 // For cost control, you can set the maximum number of containers that can be
@@ -26,7 +25,7 @@ setGlobalOptions({ maxInstances: 10 });
 // Create and deploy your first functions
 // https://firebase.google.com/docs/functions/get-started
 
-const {onRequest, onCall} = require("firebase-functions/v2/https");
+const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -37,29 +36,49 @@ admin.initializeApp();
 const emailConfig = {
   service: 'gmail', // or your preferred email service
   auth: {
-    user: process.env.EMAIL_USER || 'your-email@gmail.com',
-    pass: process.env.EMAIL_PASS || 'your-app-password'
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   }
 };
 
-const transporter = nodemailer.createTransporter(emailConfig);
+const transporter = nodemailer.createTransport(emailConfig);
+
+// Wrap legacy response-style handlers as authenticated Firebase callable functions.
+// Always derive tenancy from the verified auth token, never untrusted request data.
+const secureCallable = (handler, {adminOnly = false} = {}) => onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  if (adminOnly && request.auth.token.admin !== true) {
+    throw new HttpsError('permission-denied', 'Administrator access required');
+  }
+  if (request.data?.userId && request.data.userId !== request.auth.uid) {
+    throw new HttpsError('permission-denied', 'Cannot access another user');
+  }
+  const req = {body: {...(request.data || {}), userId: request.auth.uid}};
+  let response;
+  const res = {
+    status(code) {this.statusCode = code; return this;},
+    json(value) {response = value; return value;},
+  };
+  await handler(req, res);
+  if (res.statusCode && res.statusCode >= 400) {
+    throw new HttpsError('internal', response?.error || 'Request failed');
+  }
+  return response;
+});
 
 // Generate unique quote/invoice numbers
-exports.generateQuoteNumber = onRequest(async (req, res) => {
+exports.generateQuoteNumber = secureCallable(async (req, res) => {
   try {
     const {userId} = req.body;
     const db = admin.firestore();
     
-    const quotesRef = db.collection(`users/${userId}/quotes`);
-    const snapshot = await quotesRef.orderBy('createdAt', 'desc').limit(1).get();
-    
-    let nextNumber = 1;
-    if (!snapshot.empty) {
-      const lastQuote = snapshot.docs[0].data();
-      const lastNumber = parseInt(lastQuote.quoteNumber?.replace('Q-', '') || '0');
-      nextNumber = lastNumber + 1;
-    }
-    
+    const counterRef = db.doc(`users/${userId}/counters/quotes`);
+    const nextNumber = await db.runTransaction(async transaction => {
+      const counter = await transaction.get(counterRef);
+      const next = (counter.exists ? counter.data().value || 0 : 0) + 1;
+      transaction.set(counterRef, {value: next, updatedAt: admin.firestore.FieldValue.serverTimestamp()});
+      return next;
+    });
     const quoteNumber = `Q-${String(nextNumber).padStart(4, '0')}`;
     res.json({quoteNumber});
   } catch (error) {
@@ -68,21 +87,18 @@ exports.generateQuoteNumber = onRequest(async (req, res) => {
   }
 });
 
-exports.generateInvoiceNumber = onRequest(async (req, res) => {
+exports.generateInvoiceNumber = secureCallable(async (req, res) => {
   try {
     const {userId} = req.body;
     const db = admin.firestore();
     
-    const invoicesRef = db.collection(`users/${userId}/invoices`);
-    const snapshot = await invoicesRef.orderBy('createdAt', 'desc').limit(1).get();
-    
-    let nextNumber = 1;
-    if (!snapshot.empty) {
-      const lastInvoice = snapshot.docs[0].data();
-      const lastNumber = parseInt(lastInvoice.invoiceNumber?.replace('INV-', '') || '0');
-      nextNumber = lastNumber + 1;
-    }
-    
+    const counterRef = db.doc(`users/${userId}/counters/invoices`);
+    const nextNumber = await db.runTransaction(async transaction => {
+      const counter = await transaction.get(counterRef);
+      const next = (counter.exists ? counter.data().value || 0 : 0) + 1;
+      transaction.set(counterRef, {value: next, updatedAt: admin.firestore.FieldValue.serverTimestamp()});
+      return next;
+    });
     const invoiceNumber = `INV-${String(nextNumber).padStart(4, '0')}`;
     res.json({invoiceNumber});
   } catch (error) {
@@ -128,7 +144,7 @@ exports.updateInventoryOnSale = onDocumentUpdated(
 );
 
 // Send quote email
-exports.sendQuoteEmail = onRequest(async (req, res) => {
+exports.sendQuoteEmail = secureCallable(async (req, res) => {
   try {
     const {userId, quoteId, clientEmail, clientName, quoteData} = req.body;
     const db = admin.firestore();
@@ -192,7 +208,7 @@ exports.sendQuoteEmail = onRequest(async (req, res) => {
 });
 
 // Send invoice email
-exports.sendInvoiceEmail = onRequest(async (req, res) => {
+exports.sendInvoiceEmail = secureCallable(async (req, res) => {
   try {
     const {userId, invoiceId, clientEmail, clientName, invoiceData} = req.body;
     const db = admin.firestore();
@@ -260,7 +276,7 @@ exports.sendInvoiceEmail = onRequest(async (req, res) => {
 });
 
 // Calculate business metrics
-exports.calculateBusinessMetrics = onRequest(async (req, res) => {
+exports.calculateBusinessMetrics = secureCallable(async (req, res) => {
   try {
     const {userId, period} = req.body; // period: 'daily', 'weekly', 'monthly', 'yearly'
     const db = admin.firestore();
@@ -383,7 +399,7 @@ exports.createInvoiceFromQuote = onDocumentUpdated(
 );
 
 // Send payment reminders
-exports.sendPaymentReminders = onRequest(async (req, res) => {
+exports.sendPaymentReminders = secureCallable(async (req, res) => {
   try {
     const db = admin.firestore();
     const now = new Date();
@@ -426,10 +442,10 @@ exports.sendPaymentReminders = onRequest(async (req, res) => {
     logger.error('Error sending payment reminders:', error);
     res.status(500).json({error: 'Failed to send reminders'});
   }
-});
+}, {adminOnly: true});
 
 // Backup business data
-exports.backupBusinessData = onRequest(async (req, res) => {
+exports.backupBusinessData = secureCallable(async (req, res) => {
   try {
     const {userId} = req.body;
     const db = admin.firestore();
@@ -466,7 +482,7 @@ exports.backupBusinessData = onRequest(async (req, res) => {
 });
 
 // Validate business data integrity
-exports.validateBusinessData = onRequest(async (req, res) => {
+exports.validateBusinessData = secureCallable(async (req, res) => {
   try {
     const {userId} = req.body;
     const db = admin.firestore();
@@ -530,7 +546,7 @@ exports.validateBusinessData = onRequest(async (req, res) => {
 });
 
 // Generate business report
-exports.generateBusinessReport = onRequest(async (req, res) => {
+exports.generateBusinessReport = secureCallable(async (req, res) => {
   try {
     const {userId, startDate, endDate} = req.body;
     const db = admin.firestore();

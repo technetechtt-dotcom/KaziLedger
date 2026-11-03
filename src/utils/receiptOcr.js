@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-escape -- Regex separators retained for readability. */
 import Tesseract from 'tesseract.js';
 
 /**

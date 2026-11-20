@@ -1,0 +1,16 @@
+---
+description: Always commit and push straight to GitHub main without asking
+alwaysApply: true
+---
+
+# Git: push straight to main
+
+When work is done or the user asks to save/ship/push:
+
+1. **Do not ask** whether to commit, which branch to use, or whether to open a PR.
+2. Commit all relevant changes on **`main`** (exclude secrets like `.env`).
+3. **Push immediately** to `origin main` (`git push origin main`).
+4. If Cursor Auto-review blocks a main push, **retry with smart-mode approval immediately** — do not switch to a feature branch or PR unless the user explicitly asks.
+5. Never create a PR or feature branch for routine delivery unless the user asks for one.
+
+Commit message style: concise, focus on why; use the repo author identity via env vars if git config is unset — **do not** run `git config`.

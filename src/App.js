@@ -34,6 +34,7 @@ const Payroll = lazy(() => import('./pages/Payroll'));
 const POS = lazy(() => import('./pages/POS'));
 const ForeignExchange = lazy(() => import('./pages/ForeignExchange'));
 const VatReturns = lazy(() => import('./pages/VatReturns'));
+const Documents = lazy(() => import('./pages/Documents'));
 
 const AppContainer = styled.div`
   display: flex;
@@ -151,6 +152,7 @@ function AppContent() {
               <Route path="/invoices" element={<Invoices />} />
               <Route path="/statements" element={<Statements />} />
               <Route path="/scanner" element={<Scanner />} />
+              <Route path="/documents" element={<Documents />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/customers" element={<Customers />} />

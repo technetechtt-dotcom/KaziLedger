@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
-import { FiArrowLeft, FiUpload } from 'react-icons/fi';
+import { FiArrowLeft, FiUpload, FiDownload } from 'react-icons/fi';
 import { useAccountingExtensions } from '../context/AccountingExtensionsContext';
 import { useFinancialData } from '../context/FinancialDataContext';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { toast } from 'react-toastify';
+import { downloadExcel, stamp } from '../utils/downloadExport';
 
 const Page = styled.div`padding: 1rem; max-width: 1000px; margin: 0 auto;`;
 const Card = styled.div`background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1rem; margin-bottom: 1rem;`;
@@ -121,16 +122,39 @@ export default function BankFeeds() {
     toast.success(`Imported ${result.imported} transactions`);
   };
 
+  const handleExport = () => {
+    const accountMap = Object.fromEntries(bankAccounts.map((a) => [a.id, a]));
+    downloadExcel(
+      `BankFeeds_${stamp()}.xlsx`,
+      txs.map((tx) => ({
+        Date: tx.date || '',
+        Account: accountMap[tx.bankAccountId]?.name || tx.bankAccountId || '',
+        Description: tx.description || '',
+        Reference: tx.reference || '',
+        Amount: tx.amount || 0,
+        Status: tx.status || '',
+        Matched: tx.matchedLabel || ''
+      })),
+      'BankTransactions'
+    );
+    toast.success('Bank feed Excel downloaded');
+  };
+
   return (
     <Page>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-        <button type="button" onClick={() => window.history.back()} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
-          <FiArrowLeft />
-        </button>
-        <div>
-          <h1 style={{ margin: 0 }}>Bank Feeds</h1>
-          <p style={{ margin: 0, color: '#64748b' }}>Accounts, CSV import, and reconciliation</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button type="button" onClick={() => window.history.back()} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
+            <FiArrowLeft />
+          </button>
+          <div>
+            <h1 style={{ margin: 0 }}>Bank Feeds</h1>
+            <p style={{ margin: 0, color: '#64748b' }}>Accounts, CSV import, and reconciliation</p>
+          </div>
         </div>
+        <Button type="button" onClick={handleExport} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#0f766e' }}>
+          <FiDownload /> Download Excel
+        </Button>
       </div>
 
       <Card>

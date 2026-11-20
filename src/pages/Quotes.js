@@ -21,6 +21,8 @@ import { useCustomer } from '../context/CustomerContext';
 import QuoteTemplate from '../components/QuoteTemplate';
 import { functionsService } from '../firebase/functions';
 import { generateNextQuoteNumber } from '../services/numberGenerator';
+import { downloadExcel, stamp } from '../utils/downloadExport';
+import { toast } from 'react-toastify';
 
 const QuotesContainer = styled.div`
   padding: 1rem;
@@ -1566,6 +1568,22 @@ export default function Quotes() {
     return 0;
   };
 
+  const handleExportQuotesExcel = () => {
+    downloadExcel(
+      `Quotes_${stamp()}.xlsx`,
+      filteredQuotes.map((q) => ({
+        QuoteNumber: q.quoteNumber || '',
+        Customer: q.customerName || q.customer?.name || '',
+        Status: q.status || '',
+        Date: q.createdAt || q.date || '',
+        ValidUntil: q.validUntil || '',
+        Total: calculateQuoteTotal(q)
+      })),
+      'Quotes'
+    );
+    toast.success('Quotes Excel downloaded');
+  };
+
   const isQuoteExpired = (quote) => {
     if (!quote.validUntil) return false;
     const validUntil = new Date(quote.validUntil);
@@ -1584,9 +1602,20 @@ export default function Quotes() {
               </BackButton>
               <MainTitle>Quote Management</MainTitle>
             </div>
-            <CreateButton onClick={() => setShowCreateModal(true)}>
-              Create Quote
-            </CreateButton>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <CreateButton
+                type="button"
+                onClick={handleExportQuotesExcel}
+                style={{ background: '#0f766e' }}
+                title="Download quotes Excel"
+              >
+                <FiDownload style={{ marginRight: '0.35rem' }} />
+                Download
+              </CreateButton>
+              <CreateButton onClick={() => setShowCreateModal(true)}>
+                Create Quote
+              </CreateButton>
+            </div>
           </Header>
 
           <FilterTabs>
@@ -1655,6 +1684,10 @@ export default function Quotes() {
                     <QuoteActions>
                       <QuoteActionButton onClick={() => handleViewQuote(quote)}>
                         View
+                      </QuoteActionButton>
+                      <QuoteActionButton onClick={() => handleDownloadQuote(quote)} title="Download PDF">
+                        <FiDownload style={{ marginRight: '0.25rem' }} />
+                        Download
                       </QuoteActionButton>
                       {quote.status === 'pending' && !expired && (
                         <>

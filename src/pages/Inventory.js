@@ -10,10 +10,14 @@ import {
   FiX,
   FiPackage,
   FiSettings,
-  FiUsers
+  FiUsers,
+  FiDownload
 } from 'react-icons/fi';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { useFinancialData } from '../context/FinancialDataContext';
+import { stamp } from '../utils/downloadExport';
+import { toast } from 'react-toastify';
+import * as XLSX from 'xlsx';
 
 const InventoryContainer = styled.div`
   padding: 0;
@@ -741,6 +745,42 @@ export default function Inventory() {
     setShowStockMovement(true);
   };
 
+  const handleExportInventory = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        products.map((p) => ({
+          Name: p.name || '',
+          Type: p.itemType || 'product',
+          Description: p.description || '',
+          UnitPrice: p.unitPrice ?? p.price ?? 0,
+          Quantity: p.quantity ?? p.stock ?? 0,
+          Category: p.category || '',
+          Duration: p.duration || ''
+        }))
+      ),
+      'Inventory'
+    );
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        (stockMovements || []).map((m) => ({
+          Product: m.productName || '',
+          Type: m.type || '',
+          Quantity: m.quantity ?? '',
+          Reference: m.reference || '',
+          Date: m.createdAt?.toDate
+            ? m.createdAt.toDate().toISOString()
+            : (m.createdAt ? new Date(m.createdAt).toISOString() : '')
+        }))
+      ),
+      'Movements'
+    );
+    XLSX.writeFile(wb, `Inventory_${stamp()}.xlsx`);
+    toast.success('Inventory Excel downloaded');
+  };
+
   if (showStockMovement) {
     return (
       <InventoryContainer>
@@ -749,7 +789,9 @@ export default function Inventory() {
             <FiArrowLeft />
           </BackButton>
           <PageTitle>Stock Movement Log</PageTitle>
-          <div></div>
+          <AddButton type="button" onClick={handleExportInventory} aria-label="Download inventory Excel" title="Download Excel">
+            <FiDownload aria-hidden="true" />
+          </AddButton>
         </TopBar>
 
         <ContentArea>
@@ -793,9 +835,19 @@ export default function Inventory() {
       <ContentArea>
         <Header>
           <Title>Inventory</Title>
-          <AddButton onClick={handleAddProduct} aria-label="Add new product">
-            <FiPlus aria-hidden="true" />
-          </AddButton>
+          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+            <AddButton
+              type="button"
+              onClick={handleExportInventory}
+              aria-label="Download inventory Excel"
+              title="Download Excel"
+            >
+              <FiDownload aria-hidden="true" />
+            </AddButton>
+            <AddButton onClick={handleAddProduct} aria-label="Add new product">
+              <FiPlus aria-hidden="true" />
+            </AddButton>
+          </div>
         </Header>
 
         <ItemTypeTabs>

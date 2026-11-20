@@ -12,6 +12,13 @@ import {
   serverTimestamp 
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import {
+  postCashSaleJournal,
+  postExpenseJournal,
+  postInvoiceJournal,
+  postPaymentJournal,
+  recordBankDeposit
+} from '../services/glPosting';
 
 const FinancialDataContext = createContext();
 
@@ -382,18 +389,47 @@ export function FinancialDataProvider({ children }) {
     dispatch({ type: ACTIONS.CALCULATE_TOTALS, payload: totals });
   }, [state.income, state.expenses, state.quotes, state.invoices, state.products]);
 
-  // Add income
+  // Add income — writes financials + GL + bank deposit (unless skipGl)
   const addIncome = useCallback(async (incomeData) => {
     if (!user) return { success: false, error: 'User not authenticated' };
     
     try {
       dispatch({ type: ACTIONS.SET_LOADING, payload: true });
+
+      const { skipGl, ...payload } = incomeData || {};
+      const amount = parseFloat(payload.amount) || 0;
+      const date = payload.date || new Date().toISOString().split('T')[0];
       
       const docRef = await addDoc(collection(db, 'users', user.uid, 'income'), {
-        ...incomeData,
+        ...payload,
+        amount,
+        date,
+        postedToLedger: !skipGl,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      // Direct / manual income (Record Income) posts cash sale to GL.
+      // Invoice & POS payment shadows use skipGl — their GL is posted by invoice/payment flows.
+      if (!skipGl && amount > 0) {
+        const vatAmount = parseFloat(payload.vatAmount) || 0;
+        await postCashSaleJournal(user.uid, {
+          amount,
+          vatAmount,
+          date,
+          memo: payload.notes || `Income — ${payload.category || payload.service || 'Sales'}`,
+          source: payload.source || 'income',
+          sourceId: docRef.id
+        });
+        await recordBankDeposit(user.uid, {
+          amount,
+          date,
+          description: payload.notes || `Income — ${payload.product || payload.category || 'Sales'}`,
+          reference: payload.source || 'income',
+          source: payload.source || 'income',
+          sourceId: docRef.id
+        });
+      }
       
       dispatch({ type: ACTIONS.SET_LOADING, payload: false });
       return { success: true, id: docRef.id };
@@ -403,18 +439,35 @@ export function FinancialDataProvider({ children }) {
     }
   }, [user]);
 
-  // Add expense
+  // Add expense — financials + GL
   const addExpense = useCallback(async (expenseData) => {
     if (!user) return { success: false, error: 'User not authenticated' };
     
     try {
       dispatch({ type: ACTIONS.SET_LOADING, payload: true });
+
+      const { skipGl, ...payload } = expenseData || {};
+      const amount = parseFloat(payload.amount) || 0;
+      const date = payload.date || new Date().toISOString().split('T')[0];
       
       const docRef = await addDoc(collection(db, 'users', user.uid, 'expenses'), {
-        ...expenseData,
+        ...payload,
+        amount,
+        date,
+        postedToLedger: !skipGl,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      if (!skipGl && amount > 0) {
+        await postExpenseJournal(user.uid, {
+          amount,
+          date,
+          category: payload.category,
+          notes: payload.notes,
+          sourceId: docRef.id
+        });
+      }
       
       dispatch({ type: ACTIONS.SET_LOADING, payload: false });
       return { success: true, id: docRef.id };
@@ -466,7 +519,7 @@ export function FinancialDataProvider({ children }) {
     }
   }, [user]);
 
-  // Add invoice
+  // Add invoice — posts to statements (invoices) + GL (AR or cash sale)
   const addInvoice = useCallback(async (invoiceData) => {
     if (!user) return { success: false, error: 'User not authenticated' };
     
@@ -475,14 +528,21 @@ export function FinancialDataProvider({ children }) {
 
       const total = parseFloat(invoiceData.total ?? invoiceData.amount ?? 0) || 0;
       const amountPaid = parseFloat(invoiceData.amountPaid ?? 0) || 0;
+      const vatAmount = parseFloat(invoiceData.vatAmount ?? 0) || 0;
+      const isPaid = invoiceData.status === 'paid' || (total > 0 && amountPaid >= total - 0.001);
+      const invoiceDate = invoiceData.invoiceDate
+        || invoiceData.dueDate
+        || new Date().toISOString().split('T')[0];
       const normalized = {
         type: 'invoice',
-        payments: [],
+        payments: invoiceData.payments || [],
         amountPaid,
         balanceDue: Math.max(0, total - amountPaid),
         ...invoiceData,
         amount: total,
-        total
+        total,
+        status: isPaid ? 'paid' : (invoiceData.status || 'pending'),
+        postedToLedger: true
       };
       
       const docRef = await addDoc(collection(db, 'users', user.uid, 'invoices'), {
@@ -490,6 +550,49 @@ export function FinancialDataProvider({ children }) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      if (total > 0) {
+        if (isPaid) {
+          // Immediate cash/POS sale: income register + cash GL + bank deposit
+          await addIncome({
+            amount: total,
+            vatAmount,
+            date: invoiceDate,
+            category: invoiceData.source === 'pos' ? 'POS Sales' : 'sales',
+            service: 'Invoice Paid',
+            product: invoiceData.clientName || invoiceData.customerName || 'Customer',
+            notes: `${invoiceData.source === 'pos' ? 'POS' : 'Invoice'} ${invoiceData.invoiceNumber || docRef.id}`,
+            source: invoiceData.source === 'pos' ? 'pos' : 'invoice',
+            sourceId: docRef.id,
+            skipGl: true
+          });
+          await postCashSaleJournal(user.uid, {
+            amount: total,
+            vatAmount,
+            date: invoiceDate,
+            memo: `${invoiceData.source === 'pos' ? 'POS' : 'Paid invoice'} ${invoiceData.invoiceNumber || ''}`.trim(),
+            source: invoiceData.source === 'pos' ? 'pos' : 'invoice',
+            sourceId: docRef.id
+          });
+          await recordBankDeposit(user.uid, {
+            amount: total,
+            date: invoiceDate,
+            description: `Sale ${invoiceData.invoiceNumber || ''} — ${invoiceData.clientName || 'Customer'}`.trim(),
+            reference: invoiceData.invoiceNumber || docRef.id,
+            source: invoiceData.source === 'pos' ? 'pos' : 'invoice',
+            sourceId: docRef.id
+          });
+        } else {
+          // Credit sale: AR + sales (money lands in statements as outstanding)
+          await postInvoiceJournal(user.uid, {
+            amount: total,
+            vatAmount,
+            date: invoiceDate,
+            invoiceNumber: invoiceData.invoiceNumber,
+            sourceId: docRef.id
+          });
+        }
+      }
       
       dispatch({ type: ACTIONS.SET_LOADING, payload: false });
       return { success: true, id: docRef.id };
@@ -497,7 +600,7 @@ export function FinancialDataProvider({ children }) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: error.message });
       return { success: false, error: error.message };
     }
-  }, [user]);
+  }, [user, addIncome]);
 
   // Record stock movement
   const addStockMovement = useCallback(async (movementData) => {
@@ -653,14 +756,31 @@ export function FinancialDataProvider({ children }) {
         const alreadyPaid = parseFloat(currentInvoice?.amountPaid || 0) || 0;
         const remaining = Math.max(0, total - alreadyPaid);
         if (remaining > 0) {
+          const payDate = new Date().toISOString().split('T')[0];
           await addIncome({
             amount: remaining,
-            date: new Date().toISOString().split('T')[0],
+            date: payDate,
             category: 'sales',
             service: 'Invoice Paid',
             product: dataToSave.customerName || dataToSave.clientName || currentInvoice?.clientName || 'Customer',
             notes: `Invoice #${dataToSave.invoiceNumber || currentInvoice?.invoiceNumber} paid`,
             source: 'invoice',
+            sourceId: id,
+            skipGl: true
+          });
+          await postPaymentJournal(user.uid, {
+            amount: remaining,
+            date: payDate,
+            invoiceNumber: dataToSave.invoiceNumber || currentInvoice?.invoiceNumber,
+            clientName: dataToSave.clientName || currentInvoice?.clientName,
+            sourceId: id
+          });
+          await recordBankDeposit(user.uid, {
+            amount: remaining,
+            date: payDate,
+            description: `Payment — invoice ${dataToSave.invoiceNumber || currentInvoice?.invoiceNumber || id}`,
+            reference: dataToSave.invoiceNumber || id,
+            source: 'invoice_payment',
             sourceId: id
           });
         }
@@ -675,6 +795,7 @@ export function FinancialDataProvider({ children }) {
   }, [user, state.invoices, addIncome]);
 
   // Record a (partial or full) payment against an invoice
+  // Updates invoice (statements) + income register + GL (Dr Bank / Cr AR) + bank deposit
   const recordPayment = useCallback(async (invoiceId, payment) => {
     if (!user) return { success: false, error: 'User not authenticated' };
     try {
@@ -721,7 +842,25 @@ export function FinancialDataProvider({ children }) {
         notes: `Payment for invoice ${invoice.invoiceNumber}${payment.notes ? ` — ${payment.notes}` : ''}`,
         source: 'invoice',
         sourceId: invoiceId,
-        paymentId: paymentRecord.id
+        paymentId: paymentRecord.id,
+        skipGl: true
+      });
+
+      await postPaymentJournal(user.uid, {
+        amount: payAmount,
+        date: paymentRecord.date,
+        invoiceNumber: invoice.invoiceNumber,
+        clientName: invoice.clientName || invoice.customerName,
+        sourceId: invoiceId
+      });
+
+      await recordBankDeposit(user.uid, {
+        amount: payAmount,
+        date: paymentRecord.date,
+        description: `Payment — invoice ${invoice.invoiceNumber || invoiceId}`,
+        reference: invoice.invoiceNumber || invoiceId,
+        source: 'invoice_payment',
+        sourceId: invoiceId
       });
 
       return { success: true, status, balanceDue, amountPaid };

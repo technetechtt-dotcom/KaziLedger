@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
-import { FiArrowLeft, FiPlus } from 'react-icons/fi';
+import { FiArrowLeft, FiPlus, FiDownload } from 'react-icons/fi';
 import { useAccountingExtensions } from '../context/AccountingExtensionsContext';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { toast } from 'react-toastify';
+import { stamp } from '../utils/downloadExport';
+import * as XLSX from 'xlsx';
 
 const Page = styled.div`padding: 1rem; max-width: 1000px; margin: 0 auto;`;
 const Card = styled.div`background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1rem; margin-bottom: 1rem;`;
@@ -58,16 +60,61 @@ export default function GeneralLedger() {
     } else alert(result.error);
   };
 
+  const handleExport = () => {
+    const wb = XLSX.utils.book_new();
+    const accountsSheet = XLSX.utils.json_to_sheet(
+      sortedAccounts.map((a) => ({
+        Code: a.code,
+        Name: a.name,
+        Type: a.type,
+        Balance: a.balance || 0
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, accountsSheet, 'Accounts');
+
+    const journalRows = [];
+    journals.forEach((j) => {
+      (j.lines || []).forEach((line) => {
+        journalRows.push({
+          Date: j.date,
+          Memo: j.memo || '',
+          Account: line.accountCode,
+          Debit: line.debit || 0,
+          Credit: line.credit || 0,
+          LineMemo: line.memo || ''
+        });
+      });
+      if (!(j.lines || []).length) {
+        journalRows.push({
+          Date: j.date,
+          Memo: j.memo || '',
+          Account: '',
+          Debit: j.debitTotal || 0,
+          Credit: j.creditTotal || 0,
+          LineMemo: ''
+        });
+      }
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(journalRows), 'Journals');
+    XLSX.writeFile(wb, `GeneralLedger_${stamp()}.xlsx`);
+    toast.success('General ledger Excel downloaded');
+  };
+
   return (
     <Page>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-        <button type="button" onClick={() => window.history.back()} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
-          <FiArrowLeft />
-        </button>
-        <div>
-          <h1 style={{ margin: 0 }}>General Ledger</h1>
-          <p style={{ margin: 0, color: '#64748b' }}>Chart of accounts and double-entry journals</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button type="button" onClick={() => window.history.back()} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
+            <FiArrowLeft />
+          </button>
+          <div>
+            <h1 style={{ margin: 0 }}>General Ledger</h1>
+            <p style={{ margin: 0, color: '#64748b' }}>Chart of accounts and double-entry journals</p>
+          </div>
         </div>
+        <Button type="button" onClick={handleExport} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#0f766e' }}>
+          <FiDownload /> Download Excel
+        </Button>
       </div>
 
       <Card>

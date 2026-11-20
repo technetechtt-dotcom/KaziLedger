@@ -19,7 +19,8 @@ import {
   FiBriefcase,
   FiShoppingCart,
   FiGlobe,
-  FiPercent
+  FiPercent,
+  FiFolder
 } from 'react-icons/fi';
 import { signOutUser } from '../firebase/auth';
 import { logAnalyticsEvent, AnalyticsEvents } from '../utils/analytics';
@@ -41,7 +42,9 @@ const NavigationContainer = styled.nav`
   
   @media (min-width: 768px) {
     transform: translateX(0);
-    position: relative;
+    position: fixed;
+    left: 0;
+    top: 0;
     height: 100vh;
   }
   
@@ -54,6 +57,8 @@ const NavigationContainer = styled.nav`
 const NavContent = styled.div`
   padding: 2rem 0;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 `;
 
 const NavSection = styled.div`
@@ -204,6 +209,11 @@ const SignOutIcon = styled.span`
   align-items: center;
 `;
 
+const filesNavItems = [
+  { path: '/documents', icon: FiFolder, label: 'Documents' },
+  { path: '/scanner', icon: FiCamera, label: 'Scanner' }
+];
+
 const navigationItems = [
   { path: '/', icon: FiHome, label: 'Home' },
   { path: '/quotes', icon: FiFileText, label: 'Quotes' },
@@ -215,7 +225,6 @@ const navigationItems = [
   { path: '/payroll', icon: FiBriefcase, label: 'Payroll' },
   { path: '/fx', icon: FiGlobe, label: 'FX' },
   { path: '/vat-returns', icon: FiPercent, label: 'VAT Returns' },
-  { path: '/scanner', icon: FiCamera, label: 'Scanner' },
   { path: '/reports', icon: FiBarChart, label: 'Reports' },
   { path: '/inventory', icon: FiPackage, label: 'Inventory' },
   { path: '/customers', icon: FiUsers, label: 'Customers' },
@@ -226,10 +235,28 @@ const navigationItems = [
 
 const bottomNavItems = [
   { path: '/', icon: FiHome, label: 'Home' },
-  { path: '/quotes', icon: FiFileText, label: 'Quotes' },
+  { path: '/documents', icon: FiFolder, label: 'Documents' },
+  { path: '/scanner', icon: FiCamera, label: 'Scanner' },
   { path: '/invoices', icon: FiReceipt, label: 'Invoices' },
   { path: '/reports', icon: FiBarChart, label: 'Reports' }
 ];
+
+const renderNavLink = (item, location, closeMobileMenu) => (
+  <NavItem key={item.path}>
+    <NavLink
+      to={item.path}
+      className={location.pathname === item.path ? 'active' : ''}
+      onClick={closeMobileMenu}
+      aria-label={item.label}
+      aria-current={location.pathname === item.path ? 'page' : undefined}
+    >
+      <NavIcon aria-hidden="true">
+        <item.icon />
+      </NavIcon>
+      <NavText>{item.label}</NavText>
+    </NavLink>
+  </NavItem>
+);
 
 export default function Navigation({ isMobileMenuOpen, onCloseMobileMenu }) {
   const location = useLocation();
@@ -266,24 +293,15 @@ export default function Navigation({ isMobileMenuOpen, onCloseMobileMenu }) {
       <NavigationContainer className={isMobileMenuOpen ? 'mobile-open' : ''}>
         <NavContent>
           <NavSection>
+            <NavTitle>Files</NavTitle>
+            <NavList>
+              {filesNavItems.map((item) => renderNavLink(item, location, closeMobileMenu))}
+            </NavList>
+          </NavSection>
+          <NavSection>
             <NavTitle>Main</NavTitle>
             <NavList>
-              {navigationItems.map((item) => (
-                <NavItem key={item.path}>
-                  <NavLink
-                    to={item.path}
-                    className={location.pathname === item.path ? 'active' : ''}
-                    onClick={closeMobileMenu}
-                    aria-label={item.label}
-                    aria-current={location.pathname === item.path ? 'page' : undefined}
-                  >
-                    <NavIcon aria-hidden="true">
-                      <item.icon />
-                    </NavIcon>
-                    <NavText>{item.label}</NavText>
-                  </NavLink>
-                </NavItem>
-              ))}
+              {navigationItems.map((item) => renderNavLink(item, location, closeMobileMenu))}
             </NavList>
           </NavSection>
         </NavContent>

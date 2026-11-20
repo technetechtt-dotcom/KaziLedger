@@ -55,6 +55,7 @@ const initialState = {
   journals: [],
   employees: [],
   payRuns: [],
+  timeEntries: [],
   fxRates: [],
   vatReturns: [],
   baseCurrency: 'ZAR'
@@ -108,6 +109,7 @@ export function AccountingExtensionsProvider({ children }) {
     listen('journals', 'journals');
     listen('employees', 'employees');
     listen('payRuns', 'payRuns');
+    listen('timeEntries', 'timeEntries');
     listen('fxRates', 'fxRates', 'code');
     listen('vatReturns', 'vatReturns');
 
@@ -436,6 +438,109 @@ export function AccountingExtensionsProvider({ children }) {
     }
   }, [user, col]);
 
+  const clockIn = useCallback(async (employeeId) => {
+    if (!user) return { success: false, error: 'Not authenticated' };
+    try {
+      const employee = state.employees.find((e) => e.id === employeeId);
+      if (!employee) throw new Error('Employee not found');
+      const open = state.timeEntries.find(
+        (t) => t.employeeId === employeeId && t.status === 'open'
+      );
+      if (open) throw new Error('Already clocked in');
+
+      const now = new Date();
+      const ref = await addDoc(col('timeEntries'), {
+        employeeId,
+        employeeName: employee.name,
+        date: now.toISOString().split('T')[0],
+        clockIn: now.toISOString(),
+        clockOut: null,
+        hours: 0,
+        notes: '',
+        status: 'open',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      return { success: true, id: ref.id };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }, [user, col, state.employees, state.timeEntries]);
+
+  const clockOut = useCallback(async (employeeId) => {
+    if (!user) return { success: false, error: 'Not authenticated' };
+    try {
+      const open = state.timeEntries.find(
+        (t) => t.employeeId === employeeId && t.status === 'open'
+      );
+      if (!open) throw new Error('No open time entry');
+      const out = new Date();
+      const inn = new Date(open.clockIn);
+      const hours = Math.max(0, (out.getTime() - inn.getTime()) / (1000 * 60 * 60));
+      await updateDoc(doc(db, 'users', user.uid, 'timeEntries', open.id), {
+        clockOut: out.toISOString(),
+        hours: +hours.toFixed(2),
+        status: 'closed',
+        updatedAt: serverTimestamp()
+      });
+      return { success: true, hours: +hours.toFixed(2) };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }, [user, state.timeEntries]);
+
+  const addTimeEntry = useCallback(async (data) => {
+    if (!user) return { success: false, error: 'Not authenticated' };
+    try {
+      const employee = state.employees.find((e) => e.id === data.employeeId);
+      const clockInAt = data.clockIn ? new Date(data.clockIn) : null;
+      const clockOutAt = data.clockOut ? new Date(data.clockOut) : null;
+      let hours = parseFloat(data.hours);
+      if ((!hours || Number.isNaN(hours)) && clockInAt && clockOutAt) {
+        hours = Math.max(0, (clockOutAt - clockInAt) / (1000 * 60 * 60));
+      }
+      const ref = await addDoc(col('timeEntries'), {
+        employeeId: data.employeeId,
+        employeeName: employee?.name || data.employeeName || '',
+        date: data.date || (clockInAt ? clockInAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+        clockIn: clockInAt ? clockInAt.toISOString() : null,
+        clockOut: clockOutAt ? clockOutAt.toISOString() : null,
+        hours: +(hours || 0).toFixed(2),
+        notes: data.notes || '',
+        status: clockOutAt || hours ? 'closed' : 'open',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      return { success: true, id: ref.id };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }, [user, col, state.employees]);
+
+  const deleteTimeEntry = useCallback(async (id) => {
+    if (!user) return { success: false, error: 'Not authenticated' };
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'timeEntries', id));
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }, [user]);
+
+  const getHoursForEmployee = useCallback((employeeId, periodStart, periodEnd) => {
+    const start = periodStart ? new Date(periodStart) : null;
+    const end = periodEnd ? new Date(`${periodEnd}T23:59:59`) : null;
+    return state.timeEntries
+      .filter((t) => {
+        if (t.employeeId !== employeeId || t.status === 'open') return false;
+        const d = new Date(t.date || t.clockIn || 0);
+        if (start && d < start) return false;
+        if (end && d > end) return false;
+        return true;
+      })
+      .reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0);
+  }, [state.timeEntries]);
+
   const value = {
     ...state,
     addBankAccount,
@@ -452,6 +557,11 @@ export function AccountingExtensionsProvider({ children }) {
     upsertFxRate,
     convertAmount,
     saveVatReturn,
+    clockIn,
+    clockOut,
+    addTimeEntry,
+    deleteTimeEntry,
+    getHoursForEmployee,
     defaultCoa: DEFAULT_COA,
     defaultFx: DEFAULT_FX
   };

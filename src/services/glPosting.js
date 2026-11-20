@@ -1,12 +1,52 @@
-import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc
+} from 'firebase/firestore';
 import { db } from '../firebase/config';
+
+const DEFAULT_COA = [
+  { code: '1000', name: 'Bank / Cash', type: 'asset', system: true },
+  { code: '1100', name: 'Accounts Receivable', type: 'asset', system: true },
+  { code: '1200', name: 'Inventory', type: 'asset', system: true },
+  { code: '2000', name: 'Accounts Payable', type: 'liability', system: true },
+  { code: '2100', name: 'VAT Control', type: 'liability', system: true },
+  { code: '2200', name: 'Payroll Payable', type: 'liability', system: true },
+  { code: '3000', name: 'Owner Equity', type: 'equity', system: true },
+  { code: '4000', name: 'Sales Revenue', type: 'income', system: true },
+  { code: '4100', name: 'FX Gain', type: 'income', system: true },
+  { code: '5000', name: 'Cost of Sales', type: 'expense', system: true },
+  { code: '5100', name: 'Operating Expenses', type: 'expense', system: true },
+  { code: '5200', name: 'Salaries & Wages', type: 'expense', system: true },
+  { code: '5300', name: 'FX Loss', type: 'expense', system: true }
+];
+
+export async function ensureDefaultChartOfAccounts(userId) {
+  if (!userId) return;
+  const snap = await getDocs(query(collection(db, 'users', userId, 'glAccounts')));
+  if (!snap.empty) return;
+  for (const account of DEFAULT_COA) {
+    await setDoc(doc(db, 'users', userId, 'glAccounts', account.code), {
+      ...account,
+      balance: 0,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+  }
+}
 
 /**
  * Post a balanced journal and update GL account balances.
- * Used by finance flows that sit outside AccountingExtensionsProvider order.
  */
-export async function postJournalEntry(userId, { memo, date, lines }) {
+export async function postJournalEntry(userId, { memo, date, lines, source, sourceId }) {
   if (!userId) throw new Error('Not authenticated');
+  await ensureDefaultChartOfAccounts(userId);
+
   const debit = lines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0);
   const credit = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
   if (Math.abs(debit - credit) > 0.01) {
@@ -19,6 +59,8 @@ export async function postJournalEntry(userId, { memo, date, lines }) {
     lines,
     debitTotal: debit,
     creditTotal: credit,
+    source: source || null,
+    sourceId: sourceId || null,
     status: 'posted',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
@@ -42,7 +84,32 @@ export async function postJournalEntry(userId, { memo, date, lines }) {
   return { success: true, id: ref.id };
 }
 
-export async function postPaymentJournal(userId, { amount, date, invoiceNumber, clientName }) {
+/** Invoice issued on credit: Dr AR, Cr Sales (+ VAT) */
+export async function postInvoiceJournal(userId, { amount, vatAmount = 0, date, invoiceNumber, sourceId }) {
+  const total = parseFloat(amount) || 0;
+  const vat = parseFloat(vatAmount) || 0;
+  const net = Math.max(0, total - vat);
+  if (total <= 0) return { success: false, error: 'Invalid amount' };
+
+  const lines = [
+    { accountCode: '1100', debit: total, credit: 0, memo: 'AR' },
+    { accountCode: '4000', debit: 0, credit: net > 0 ? net : total, memo: 'Sales' }
+  ];
+  if (vat > 0) {
+    lines.push({ accountCode: '2100', debit: 0, credit: vat, memo: 'VAT' });
+  }
+
+  return postJournalEntry(userId, {
+    memo: `Invoice ${invoiceNumber || ''}`.trim(),
+    date,
+    lines,
+    source: 'invoice',
+    sourceId
+  });
+}
+
+/** Payment against invoice: Dr Bank, Cr AR */
+export async function postPaymentJournal(userId, { amount, date, invoiceNumber, clientName, sourceId }) {
   const amt = parseFloat(amount) || 0;
   if (amt <= 0) return { success: false, error: 'Invalid amount' };
   return postJournalEntry(userId, {
@@ -51,11 +118,44 @@ export async function postPaymentJournal(userId, { amount, date, invoiceNumber, 
     lines: [
       { accountCode: '1000', debit: amt, credit: 0, memo: 'Bank / Cash' },
       { accountCode: '1100', debit: 0, credit: amt, memo: 'Accounts Receivable' }
-    ]
+    ],
+    source: 'invoice_payment',
+    sourceId
   });
 }
 
-export async function postExpenseJournal(userId, { amount, date, category, notes }) {
+/** Cash / POS / direct income: Dr Bank, Cr Sales (+ VAT) */
+export async function postCashSaleJournal(userId, {
+  amount,
+  vatAmount = 0,
+  date,
+  memo,
+  source,
+  sourceId
+}) {
+  const total = parseFloat(amount) || 0;
+  const vat = parseFloat(vatAmount) || 0;
+  const net = Math.max(0, total - vat);
+  if (total <= 0) return { success: false, error: 'Invalid amount' };
+
+  const lines = [
+    { accountCode: '1000', debit: total, credit: 0, memo: 'Bank / Cash' },
+    { accountCode: '4000', debit: 0, credit: net > 0 ? net : total, memo: 'Sales' }
+  ];
+  if (vat > 0) {
+    lines.push({ accountCode: '2100', debit: 0, credit: vat, memo: 'VAT' });
+  }
+
+  return postJournalEntry(userId, {
+    memo: memo || 'Cash sale / income',
+    date,
+    lines,
+    source: source || 'income',
+    sourceId
+  });
+}
+
+export async function postExpenseJournal(userId, { amount, date, category, notes, sourceId }) {
   const amt = parseFloat(amount) || 0;
   if (amt <= 0) return { success: false, error: 'Invalid amount' };
   return postJournalEntry(userId, {
@@ -64,24 +164,49 @@ export async function postExpenseJournal(userId, { amount, date, category, notes
     lines: [
       { accountCode: '5100', debit: amt, credit: 0, memo: category || 'Operating Expenses' },
       { accountCode: '1000', debit: 0, credit: amt, memo: 'Bank / Cash' }
-    ]
+    ],
+    source: 'expense',
+    sourceId
   });
 }
 
-export async function postInvoiceJournal(userId, { amount, vatAmount = 0, date, invoiceNumber }) {
-  const total = parseFloat(amount) || 0;
-  const vat = parseFloat(vatAmount) || 0;
-  const net = Math.max(0, total - vat);
-  if (total <= 0) return { success: false, error: 'Invalid amount' };
-  return postJournalEntry(userId, {
-    memo: `Invoice ${invoiceNumber || ''}`.trim(),
-    date,
-    lines: [
-      { accountCode: '1100', debit: total, credit: 0, memo: 'AR' },
-      { accountCode: '4000', debit: 0, credit: net, memo: 'Sales' },
-      ...(vat > 0 ? [{ accountCode: '2100', debit: 0, credit: vat, memo: 'VAT' }] : [
-        // If no VAT split, credit full amount to sales already covered by net===total
-      ])
-    ].filter((l) => (l.debit || 0) + (l.credit || 0) > 0)
-  });
+/** Soft-fail bank deposit so money also appears in Bank Feeds when an account exists */
+export async function recordBankDeposit(userId, { amount, date, description, reference, source, sourceId }) {
+  try {
+    const amt = parseFloat(amount) || 0;
+    if (!userId || amt <= 0) return { success: false };
+
+    const accountsSnap = await getDocs(query(collection(db, 'users', userId, 'bankAccounts')));
+    if (accountsSnap.empty) return { success: false, error: 'No bank account' };
+
+    const accountDoc = accountsSnap.docs[0];
+    const account = { id: accountDoc.id, ...accountDoc.data() };
+    const nextBalance = (parseFloat(account.balance) || 0) + amt;
+
+    await addDoc(collection(db, 'users', userId, 'bankTransactions'), {
+      bankAccountId: account.id,
+      date: date || new Date().toISOString().split('T')[0],
+      description: description || 'Deposit',
+      amount: amt,
+      reference: reference || '',
+      source: source || 'auto',
+      sourceId: sourceId || null,
+      status: 'reconciled',
+      matchedType: source || 'income',
+      matchedId: sourceId || null,
+      matchedLabel: description || 'Auto deposit',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+
+    await updateDoc(doc(db, 'users', userId, 'bankAccounts', account.id), {
+      balance: nextBalance,
+      updatedAt: serverTimestamp()
+    });
+
+    return { success: true };
+  } catch (e) {
+    console.warn('Bank deposit auto-record skipped', e);
+    return { success: false, error: e.message };
+  }
 }

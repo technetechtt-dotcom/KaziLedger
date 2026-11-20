@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -9,11 +9,14 @@ import {
   FiCheck,
   FiRefreshCw,
   FiShield,
+  FiX,
+  FiRepeat,
 } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { useFinancialData } from '../context/FinancialDataContext';
 import { useFirebaseBusiness } from '../context/FirebaseBusinessContext';
 import { useCompliance } from '../context/ComplianceContext';
+import { useDocumentLibrary, DOCUMENT_SOURCES } from '../context/DocumentLibraryContext';
 import { uploadReceipt } from '../firebase/storage';
 import { scanReceipt } from '../utils/receiptOcr';
 import { logAnalyticsEvent } from '../utils/analytics';
@@ -335,6 +338,75 @@ const Hint = styled.p`
   margin: 0.25rem 0 0;
 `;
 
+const CameraOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: #0f172a;
+  display: flex;
+  flex-direction: column;
+`;
+
+const CameraTopBar = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  color: white;
+`;
+
+const CameraStage = styled.div`
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000;
+`;
+
+const CameraVideo = styled.video`
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+`;
+
+const CameraControls = styled.div`
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding: 1rem 1.25rem 1.5rem;
+  background: #0f172a;
+`;
+
+const CaptureBtn = styled.button`
+  width: 68px;
+  height: 68px;
+  border-radius: 999px;
+  border: 4px solid white;
+  background: #14b8a6;
+  cursor: pointer;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.35);
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const CamIconBtn = styled.button`
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+`;
+
 const emptyForm = () => ({
   vendor: '',
   date: new Date().toISOString().split('T')[0],
@@ -353,8 +425,12 @@ export default function Scanner() {
   const { addExpense } = useFinancialData();
   const { user } = useFirebaseBusiness();
   const { addDocument } = useCompliance();
+  const { addLibraryDocument } = useDocumentLibrary();
 
-  const cameraInputRef = useRef(null);
+  const uploadInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
   const [step, setStep] = useState('capture'); // capture | processing | review | done
   const [previewUrl, setPreviewUrl] = useState(null);
   const [file, setFile] = useState(null);
@@ -365,8 +441,108 @@ export default function Scanner() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [saving, setSaving] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [facingMode, setFacingMode] = useState('environment');
+  const [cameraReady, setCameraReady] = useState(false);
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraReady(false);
+    setCameraOpen(false);
+  }, []);
+
+  const requestCameraStream = useCallback(async (mode) => {
+    const attempts = [
+      { audio: false, video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+      { audio: false, video: { facingMode: mode } },
+      { audio: false, video: true }
+    ];
+    let lastError = null;
+    for (const constraints of attempts) {
+      try {
+        return await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError || new Error('Camera unavailable');
+  }, []);
+
+  const startCamera = useCallback(async (mode = facingMode) => {
+    setError('');
+
+    if (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost') {
+      setError('Camera needs HTTPS (or localhost). Use Upload File instead.');
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('This browser does not support live camera. Use Upload File.');
+      return;
+    }
+
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+
+      const stream = await requestCameraStream(mode);
+      streamRef.current = stream;
+      setFacingMode(mode);
+      setCameraReady(false);
+      setCameraOpen(true);
+    } catch (err) {
+      console.error('Camera error:', err);
+      setCameraOpen(false);
+      setError(
+        err?.name === 'NotAllowedError'
+          ? 'Camera permission denied. Click Allow when prompted, or use Upload File.'
+          : 'Could not open camera. Check that a webcam is connected, then try again — or use Upload File.'
+      );
+    }
+  }, [facingMode, requestCameraStream]);
+
+  const flipCamera = useCallback(() => {
+    const next = facingMode === 'environment' ? 'user' : 'environment';
+    startCamera(next);
+  }, [facingMode, startCamera]);
+
+  const openFilePicker = useCallback(() => {
+    setError('');
+    // Must be a user-gesture click on a file input WITHOUT capture=
+    // so the OS file explorer / browser picker opens (not the camera).
+    uploadInputRef.current?.click();
+  }, []);
+
+  const attachVideoStream = useCallback((node) => {
+    videoRef.current = node;
+    if (!node || !streamRef.current) return;
+    node.srcObject = streamRef.current;
+    const play = () => {
+      node
+        .play()
+        .then(() => setCameraReady(true))
+        .catch(() => setCameraReady(true));
+    };
+    node.onloadedmetadata = play;
+    if (node.readyState >= 1) play();
+  }, []);
+
+  useEffect(() => () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+    }
+  }, []);
 
   const resetAll = () => {
+    stopCamera();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setFile(null);
@@ -415,6 +591,33 @@ export default function Scanner() {
       setStep('review');
     }
   }, []);
+
+  const captureFromCamera = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !cameraReady) return;
+
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, width, height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          setError('Failed to capture photo. Try again.');
+          return;
+        }
+        const captured = new File([blob], `scan_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        stopCamera();
+        processImage(captured);
+      },
+      'image/jpeg',
+      0.92
+    );
+  }, [cameraReady, stopCamera, processImage]);
 
   const onDrop = useCallback(
     (acceptedFiles) => {
@@ -485,6 +688,29 @@ export default function Scanner() {
         throw new Error(result.error || 'Failed to save expense');
       }
 
+      // Always register in document library when a file was uploaded
+      if (receiptUrl) {
+        try {
+          await addLibraryDocument({
+            name: `Receipt - ${form.vendor || 'Expense'} - ${form.date}`,
+            category: 'Receipt',
+            tags: [form.category, form.taxDeductible ? 'tax-deductible' : null].filter(Boolean),
+            notes: form.notes || '',
+            source: DOCUMENT_SOURCES.SCANNER,
+            mimeType: file?.type || '',
+            size: file?.size || 0,
+            downloadURL: receiptUrl,
+            storagePath: receiptPath,
+            documentDate: form.date,
+            vendor: form.vendor || '',
+            amount,
+            expenseId: result.id,
+          });
+        } catch (libraryErr) {
+          console.warn('Document library archive skipped:', libraryErr);
+        }
+      }
+
       // Best-effort compliance archive for tax records
       if (form.keepForCompliance) {
         try {
@@ -551,37 +777,27 @@ export default function Scanner() {
             <ActionButton
               type="button"
               $primary
-              onClick={() => cameraInputRef.current?.click()}
-              aria-label="Take photo of receipt"
+              onClick={() => startCamera('environment')}
+              aria-label="Take a photo with camera"
             >
               <FiCamera size={22} aria-hidden="true" />
               Take Photo
             </ActionButton>
             <ActionButton
               type="button"
-              onClick={() => document.getElementById('receipt-upload')?.click()}
-              aria-label="Upload receipt image"
+              onClick={openFilePicker}
+              aria-label="Upload a file from your device"
             >
               <FiUpload size={22} aria-hidden="true" />
               Upload File
             </ActionButton>
           </ActionRow>
 
+          {/* No capture= attribute — opens file explorer / browser picker only */}
           <HiddenInput
-            ref={cameraInputRef}
+            ref={uploadInputRef}
             type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) processImage(f);
-              e.target.value = '';
-            }}
-          />
-          <HiddenInput
-            id="receipt-upload"
-            type="file"
-            accept="image/*,application/pdf"
+            accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) processImage(f);
@@ -593,9 +809,48 @@ export default function Scanner() {
             <input {...getInputProps()} />
             <FiFileText size={28} style={{ marginBottom: 8 }} aria-hidden="true" />
             <div>{isDragActive ? 'Drop the file here' : 'Or drag & drop a slip / invoice here'}</div>
-            <Hint>JPG, PNG, WEBP — clear, well-lit photos work best</Hint>
+            <Hint>Take Photo opens the camera. Upload File opens your file browser.</Hint>
           </DropZone>
         </Card>
+      )}
+
+      {cameraOpen && (
+        <CameraOverlay>
+          <CameraTopBar>
+            <CamIconBtn type="button" onClick={stopCamera} aria-label="Close camera">
+              <FiX size={20} />
+            </CamIconBtn>
+            <span style={{ fontWeight: 600 }}>Take Photo</span>
+            <CamIconBtn type="button" onClick={flipCamera} aria-label="Flip camera">
+              <FiRepeat size={18} />
+            </CamIconBtn>
+          </CameraTopBar>
+          <CameraStage>
+            <CameraVideo
+              ref={attachVideoStream}
+              playsInline
+              muted
+              autoPlay
+            />
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
+            {!cameraReady && (
+              <StatusText style={{ position: 'absolute', color: 'white' }}>
+                Starting camera…
+              </StatusText>
+            )}
+          </CameraStage>
+          <CameraControls>
+            <div style={{ width: 44 }} />
+            <CaptureBtn
+              type="button"
+              onClick={captureFromCamera}
+              disabled={!cameraReady}
+              aria-label="Capture photo"
+              title={cameraReady ? 'Capture' : 'Waiting for camera'}
+            />
+            <div style={{ width: 44 }} />
+          </CameraControls>
+        </CameraOverlay>
       )}
 
       {step === 'processing' && (
@@ -765,6 +1020,10 @@ export default function Scanner() {
                 <FiCamera aria-hidden="true" />
                 Scan Another Document
               </PrimaryButton>
+              <SecondaryButton type="button" onClick={() => navigate('/documents')}>
+                <FiFileText aria-hidden="true" />
+                Manage Documents
+              </SecondaryButton>
               <SecondaryButton type="button" onClick={() => navigate('/')}>
                 Go to Dashboard
               </SecondaryButton>

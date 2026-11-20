@@ -19,9 +19,9 @@ const Button = styled.button`background: ${p => p.secondary ? '#64748b' : '#14b8
 const Select = styled.select`padding: 0.6rem; border: 1px solid #d1d5db; border-radius: 6px; width: 100%; background: white; margin-bottom: 0.75rem;`;
 
 export default function POS() {
-  const { products, addInvoice, addIncome, updateProduct, addStockMovement } = useFinancialData();
+  const { products, addInvoice, updateProduct, addStockMovement } = useFinancialData();
   const { customers } = useCustomer();
-  const { postJournal, convertAmount, fxRates, baseCurrency } = useAccountingExtensions();
+  const { convertAmount, fxRates, baseCurrency } = useAccountingExtensions();
   const { formatCurrency } = useCurrency();
   const [cart, setCart] = useState([]);
   const [customerId, setCustomerId] = useState('');
@@ -113,35 +113,12 @@ export default function POS() {
       });
     }
 
-    if (markPaid) {
-      await addIncome({
-        amount: totalInBase,
-        date: new Date().toISOString().split('T')[0],
-        category: 'POS Sales',
-        product: customer?.name || 'Walk-in',
-        notes: `POS ${invoiceNumber}`,
-        source: 'pos',
-        sourceId: result.id
-      });
-    }
-
-    await postJournal({
-      memo: `POS ${invoiceNumber}`,
-      date: new Date().toISOString().split('T')[0],
-      lines: markPaid
-        ? [
-            { accountCode: '1000', debit: totalInBase, credit: 0, memo: 'Cash/bank' },
-            { accountCode: '4000', debit: 0, credit: convertAmount(subtotal, currency, baseCurrency || 'ZAR'), memo: 'Sales' },
-            { accountCode: '2100', debit: 0, credit: convertAmount(vatAmount, currency, baseCurrency || 'ZAR'), memo: 'VAT' }
-          ]
-        : [
-            { accountCode: '1100', debit: totalInBase, credit: 0, memo: 'AR' },
-            { accountCode: '4000', debit: 0, credit: convertAmount(subtotal, currency, baseCurrency || 'ZAR'), memo: 'Sales' },
-            { accountCode: '2100', debit: 0, credit: convertAmount(vatAmount, currency, baseCurrency || 'ZAR'), memo: 'VAT' }
-          ]
-    });
-
-    toast.success(markPaid ? 'Sale completed (paid)' : 'Sale saved as unpaid invoice');
+    // Income register, statements (invoice), GL, and bank deposit are posted by addInvoice
+    toast.success(
+      markPaid
+        ? 'Sale completed — recorded in income, statements, GL & bank'
+        : 'Sale saved as unpaid invoice — posted to AR / GL & statements'
+    );
     setCart([]);
     setTendered('');
   };

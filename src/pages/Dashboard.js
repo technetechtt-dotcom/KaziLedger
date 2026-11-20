@@ -420,7 +420,8 @@ export default function Dashboard() {
         category: formData.category,
         service: formData.service,
         product: formData.product,
-        notes: formData.notes
+        notes: formData.notes,
+        source: 'manual'
       };
 
       const result = editingIncomeId

@@ -11,6 +11,7 @@ import { functionsService } from '../firebase/functions';
 import { getInvoiceBalance, isOutstandingInvoice } from '../utils/arAging';
 import InvoiceTemplate from '../components/InvoiceTemplate';
 import { toast } from 'react-toastify';
+import { downloadExcel, stamp } from '../utils/downloadExport';
 
 const Container = styled.div`
   padding: 1rem;
@@ -1204,6 +1205,31 @@ export default function Invoices() {
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
           <Button
             type="button"
+            onClick={() => {
+              downloadExcel(
+                `Invoices_${stamp()}.xlsx`,
+                filteredInvoices.map((inv) => ({
+                  InvoiceNumber: inv.invoiceNumber || '',
+                  Client: inv.clientName || inv.customerName || '',
+                  Status: inv.status || '',
+                  Type: inv.type || 'invoice',
+                  Date: inv.createdAt || inv.date || '',
+                  DueDate: inv.dueDate || '',
+                  Total: inv.total ?? inv.amount ?? 0,
+                  Balance: getInvoiceBalance(inv)
+                })),
+                'Invoices'
+              );
+              toast.success('Invoices Excel downloaded');
+            }}
+            style={{ background: '#115e59' }}
+            title="Download invoices Excel"
+          >
+            <FiDownload style={{ marginRight: '0.35rem' }} />
+            Download
+          </Button>
+          <Button
+            type="button"
             onClick={handleGenerateRecurring}
             style={{ background: '#0f766e' }}
             title="Generate due recurring invoices"
@@ -1355,6 +1381,13 @@ export default function Invoices() {
             <Actions>
               <ActionButton onClick={() => setViewingInvoice(invoice)}>
                 View
+              </ActionButton>
+              <ActionButton
+                onClick={() => handleDownloadInvoice(invoice)}
+                title="Download invoice PDF"
+              >
+                <FiDownload style={{ marginRight: '0.25rem' }} />
+                Download
               </ActionButton>
               {invoice.type !== 'credit_note' && (
                 <ActionButton 

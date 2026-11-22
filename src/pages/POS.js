@@ -4,7 +4,9 @@ import { FiArrowLeft, FiPlus, FiTrash2, FiShoppingCart } from 'react-icons/fi';
 import { useFinancialData } from '../context/FinancialDataContext';
 import { useCustomer } from '../context/CustomerContext';
 import { useAccountingExtensions } from '../context/AccountingExtensionsContext';
+import { useFirebaseBusiness } from '../context/FirebaseBusinessContext';
 import { useCurrency } from '../contexts/CurrencyContext';
+import { postCogsJournal } from '../services/glPosting';
 import { toast } from 'react-toastify';
 
 const Page = styled.div`padding: 1rem; max-width: 1100px; margin: 0 auto;`;
@@ -22,6 +24,7 @@ export default function POS() {
   const { products, addInvoice, updateProduct, addStockMovement } = useFinancialData();
   const { customers } = useCustomer();
   const { convertAmount, fxRates, baseCurrency } = useAccountingExtensions();
+  const { user } = useFirebaseBusiness();
   const { formatCurrency } = useCurrency();
   const [cart, setCart] = useState([]);
   const [customerId, setCustomerId] = useState('');
@@ -111,6 +114,17 @@ export default function POS() {
         reference: invoiceNumber,
         notes: 'POS sale'
       });
+      const unitCost = parseFloat(product.cost ?? product.unitCost ?? 0) || 0;
+      const cogs = unitCost * (parseFloat(item.quantity) || 0);
+      if (user?.uid && cogs > 0) {
+        await postCogsJournal(user.uid, {
+          costAmount: cogs,
+          date: invoiceData.invoiceDate,
+          productName: item.name,
+          source: 'pos',
+          sourceId: result.id
+        });
+      }
     }
 
     // Income register, statements (invoice), GL, and bank deposit are posted by addInvoice

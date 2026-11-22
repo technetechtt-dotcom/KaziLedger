@@ -523,6 +523,7 @@ export default function Inventory() {
     name: '',
     description: '',
     unitPrice: '',
+    unitCost: '',
     initialStock: '',
     itemType: ITEM_TYPES.PRODUCT,
     duration: '', // For services and consultations
@@ -587,6 +588,7 @@ export default function Inventory() {
       name: '',
       description: '',
       unitPrice: '',
+      unitCost: '',
       initialStock: '',
       itemType: activeItemType,
       duration: '',
@@ -601,6 +603,7 @@ export default function Inventory() {
       name: product.name || '',
       description: product.description || '',
       unitPrice: String(product.unitPrice ?? product.price ?? ''),
+      unitCost: String(product.unitCost ?? product.cost ?? ''),
       initialStock: String(product.quantity ?? product.currentStock ?? 0),
       itemType: product.itemType || ITEM_TYPES.PRODUCT,
       duration: product.duration || '',
@@ -647,6 +650,7 @@ export default function Inventory() {
 
     try {
       const unitPrice = parseFloat(productForm.unitPrice);
+      const unitCost = parseFloat(productForm.unitCost) || 0;
       const stockQty = productForm.itemType === ITEM_TYPES.PRODUCT ? parseInt(productForm.initialStock || 0, 10) : 0;
       
       const productData = {
@@ -656,7 +660,9 @@ export default function Inventory() {
         itemType: productForm.itemType,
         category: productForm.category || 'General',
         status: 'active',
-        unitPrice
+        unitPrice,
+        unitCost,
+        cost: unitCost
       };
 
       if (productForm.itemType === ITEM_TYPES.PRODUCT) {
@@ -699,12 +705,13 @@ export default function Inventory() {
 
       if (result.success) {
         if (productForm.itemType === ITEM_TYPES.PRODUCT && stockQty > 0) {
+          const openingCost = stockQty * (unitCost > 0 ? unitCost : unitPrice);
           await addExpense({
-            amount: stockQty * unitPrice,
+            amount: openingCost,
             date: new Date().toISOString().split('T')[0],
             category: 'inventory',
             vendor: 'Stock Purchase',
-            notes: `Initial stock purchase for ${productForm.name} (${stockQty} units)`,
+            notes: `Initial stock purchase for ${productForm.name} (${stockQty} units @ cost)`,
             source: 'inventory',
             sourceId: result.id
           });
@@ -1034,7 +1041,7 @@ export default function Inventory() {
               )}
 
               <FormGroup>
-                <Label>Price</Label>
+                <Label>Sell price</Label>
                 <PriceInput>
                   <DollarSign>{getCurrencySymbol()}</DollarSign>
                   <PriceInputField
@@ -1048,15 +1055,30 @@ export default function Inventory() {
               </FormGroup>
 
               {activeItemType === ITEM_TYPES.PRODUCT && (
-                <FormGroup>
-                  <Label>Initial Stock</Label>
-                  <Input
-                    type="number"
-                    placeholder="0"
-                    value={productForm.initialStock}
-                    onChange={(e) => handleInputChange('initialStock', e.target.value)}
-                  />
-                </FormGroup>
+                <>
+                  <FormGroup>
+                    <Label>Unit cost (for COGS)</Label>
+                    <PriceInput>
+                      <DollarSign>{getCurrencySymbol()}</DollarSign>
+                      <PriceInputField
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={productForm.unitCost}
+                        onChange={(e) => handleInputChange('unitCost', e.target.value)}
+                      />
+                    </PriceInput>
+                  </FormGroup>
+                  <FormGroup>
+                    <Label>Initial Stock</Label>
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={productForm.initialStock}
+                      onChange={(e) => handleInputChange('initialStock', e.target.value)}
+                    />
+                  </FormGroup>
+                </>
               )}
 
               <SaveButton onClick={handleSaveProduct}>

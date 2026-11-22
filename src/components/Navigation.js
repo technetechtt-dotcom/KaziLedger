@@ -253,6 +253,7 @@ const navSections = [
     items: [
       { path: '/inventory', icon: FiPackage, label: 'Inventory' },
       { path: '/suppliers', icon: FiTruck, label: 'Suppliers' },
+      { path: '/purchase-orders', icon: FiPackage, label: 'Purchase Orders' },
       { path: '/documents', icon: FiFolder, label: 'Documents' },
       { path: '/scanner', icon: FiCamera, label: 'Scanner' }
     ]

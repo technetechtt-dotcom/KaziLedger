@@ -170,6 +170,49 @@ export async function postExpenseJournal(userId, { amount, date, category, notes
   });
 }
 
+/** Cost of goods sold when stock leaves: Dr COGS 5000, Cr Inventory 1200 */
+export async function postCogsJournal(userId, { costAmount, date, productName, source, sourceId }) {
+  const cost = parseFloat(costAmount) || 0;
+  if (cost <= 0) return { success: false, error: 'No cost' };
+  return postJournalEntry(userId, {
+    memo: `COGS — ${productName || 'Inventory'}`,
+    date: date || new Date().toISOString().split('T')[0],
+    lines: [
+      { accountCode: '5000', debit: cost, credit: 0, memo: 'Cost of Sales' },
+      { accountCode: '1200', debit: 0, credit: cost, memo: 'Inventory' }
+    ],
+    source: source || 'cogs',
+    sourceId
+  });
+}
+
+/** Purchase stock on credit or cash: Dr Inventory 1200, Cr AP 2000 or Bank 1000 */
+export async function postPurchaseJournal(userId, {
+  amount,
+  date,
+  supplierName,
+  paid = false,
+  sourceId
+}) {
+  const amt = parseFloat(amount) || 0;
+  if (amt <= 0) return { success: false, error: 'Invalid amount' };
+  return postJournalEntry(userId, {
+    memo: `Stock purchase — ${supplierName || 'Supplier'}`,
+    date: date || new Date().toISOString().split('T')[0],
+    lines: [
+      { accountCode: '1200', debit: amt, credit: 0, memo: 'Inventory' },
+      {
+        accountCode: paid ? '1000' : '2000',
+        debit: 0,
+        credit: amt,
+        memo: paid ? 'Bank / Cash' : 'Accounts Payable'
+      }
+    ],
+    source: 'purchase_order',
+    sourceId
+  });
+}
+
 /** Soft-fail bank deposit so money also appears in Bank Feeds when an account exists */
 export async function recordBankDeposit(userId, { amount, date, description, reference, source, sourceId }) {
   try {

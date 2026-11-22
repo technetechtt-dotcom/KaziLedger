@@ -344,7 +344,7 @@ export default function Payroll() {
           <div style={{ alignSelf: 'end' }}><Button type="button" onClick={handleRun}>Post pay run</Button></div>
         </div>
         <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
-          Uses 18% PAYE estimate + 1% UIF on gross. Posts GL journal. Payslips include captured hours for the period.
+          Uses SARS 2025/26 PAYE brackets + primary rebate, and 1% UIF (capped). Posts GL journal. Payslips include captured hours.
         </p>
       </Card>
 

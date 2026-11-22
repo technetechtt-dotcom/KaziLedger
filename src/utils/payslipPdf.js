@@ -53,8 +53,8 @@ export function generatePayslipPdf({
   const rows = [
     ['Description', 'Amount'],
     ['Gross salary', money(line?.gross)],
-    ['PAYE (est. 18%)', money(-(line?.tax || 0))],
-    ['UIF (est. 1%)', money(-(line?.uif || 0))],
+    ['PAYE (SARS brackets)', money(-(line?.tax || 0))],
+    ['UIF (1%, capped)', money(-(line?.uif || 0))],
     ['Net pay', money(line?.net)]
   ];
 

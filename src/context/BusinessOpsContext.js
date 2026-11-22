@@ -22,7 +22,8 @@ const ACTIONS = {
 const initialState = {
   suppliers: [],
   bills: [],
-  tasks: []
+  tasks: [],
+  purchaseOrders: []
 };
 
 function reducer(state, action) {
@@ -63,6 +64,7 @@ export function BusinessOpsProvider({ children }) {
     listen('suppliers', 'suppliers');
     listen('bills', 'bills');
     listen('tasks', 'tasks');
+    listen('purchaseOrders', 'purchaseOrders');
     return () => unsubs.forEach((u) => u());
   }, [user, col]);
 
@@ -183,6 +185,58 @@ export function BusinessOpsProvider({ children }) {
     }
   }, [user]);
 
+  const addPurchaseOrder = useCallback(async (data) => {
+    if (!user) return { success: false, error: 'Not authenticated' };
+    try {
+      const qty = parseFloat(data.quantity) || 0;
+      const unitCost = parseFloat(data.unitCost) || 0;
+      const total = +(qty * unitCost).toFixed(2);
+      const ref = await addDoc(col('purchaseOrders'), {
+        supplierId: data.supplierId || '',
+        supplierName: data.supplierName || '',
+        productId: data.productId || '',
+        productName: data.productName || '',
+        quantity: qty,
+        unitCost,
+        total,
+        date: data.date || new Date().toISOString().split('T')[0],
+        paid: !!data.paid,
+        status: 'ordered',
+        notes: data.notes || '',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      return { success: true, id: ref.id, total };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }, [user, col]);
+
+  const receivePurchaseOrder = useCallback(async (id, patch = {}) => {
+    if (!user) return { success: false, error: 'Not authenticated' };
+    try {
+      await updateDoc(doc(db, 'users', user.uid, 'purchaseOrders', id), {
+        status: 'received',
+        receivedAt: new Date().toISOString(),
+        ...patch,
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }, [user]);
+
+  const deletePurchaseOrder = useCallback(async (id) => {
+    if (!user) return { success: false, error: 'Not authenticated' };
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'purchaseOrders', id));
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }, [user]);
+
   const value = {
     ...state,
     addSupplier,
@@ -192,7 +246,10 @@ export function BusinessOpsProvider({ children }) {
     deleteBill,
     addTask,
     completeTask,
-    deleteTask
+    deleteTask,
+    addPurchaseOrder,
+    receivePurchaseOrder,
+    deletePurchaseOrder
   };
 
   return (

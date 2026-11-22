@@ -37,6 +37,7 @@ const VatReturns = lazy(() => import('./pages/VatReturns'));
 const Documents = lazy(() => import('./pages/Documents'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
 const Tasks = lazy(() => import('./pages/Tasks'));
+const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
 
 const AppContainer = styled.div`
   display: flex;
@@ -169,6 +170,7 @@ function AppContent() {
               <Route path="/fx" element={<ForeignExchange />} />
               <Route path="/vat-returns" element={<VatReturns />} />
               <Route path="/suppliers" element={<Suppliers />} />
+              <Route path="/purchase-orders" element={<PurchaseOrders />} />
               <Route path="/tasks" element={<Tasks />} />
             </Routes>
           </Suspense>

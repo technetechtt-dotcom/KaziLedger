@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { 
   FiArrowLeft,
@@ -9,6 +9,7 @@ import {
 import jsPDF from 'jspdf';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { useFinancialData } from '../context/FinancialDataContext';
+import { useAccountingExtensions } from '../context/AccountingExtensionsContext';
 import { AGING_LABELS, buildArAging } from '../utils/arAging';
 
 const ReportsContainer = styled.div`
@@ -329,12 +330,56 @@ const ExportModalButton = styled.button`
 
 export default function Reports() {
   const { formatCurrency } = useCurrency();
-  const { invoices, income, expenses, quotes } = useFinancialData();
+  const { invoices, income, expenses, quotes, totals } = useFinancialData();
+  const { accounts } = useAccountingExtensions();
   const arAging = buildArAging(invoices);
   const [activePeriod, setActivePeriod] = useState('daily');
   const [showExportModal, setShowExportModal] = useState(false);
   const [showBalanceSheet, setShowBalanceSheet] = useState(false);
+  const [showTrialBalance, setShowTrialBalance] = useState(false);
   const [showProfitLoss, setShowProfitLoss] = useState(false);
+
+  const glStatements = useMemo(() => {
+    const list = accounts || [];
+    const byType = (type) => list.filter((a) => a.type === type);
+    const sum = (rows) => rows.reduce((s, a) => s + (parseFloat(a.balance) || 0), 0);
+    const assets = byType('asset');
+    const liabilities = byType('liability');
+    const equity = byType('equity');
+    const incomeAccounts = byType('income');
+    const expenseAccounts = byType('expense');
+    const retained = sum(incomeAccounts) - sum(expenseAccounts);
+    const totalAssets = sum(assets);
+    const totalLiabilities = sum(liabilities);
+    const totalEquity = sum(equity) + retained;
+    const trial = list
+      .slice()
+      .sort((a, b) => String(a.code).localeCompare(String(b.code)))
+      .map((a) => {
+        const bal = parseFloat(a.balance) || 0;
+        const isCreditNature = ['liability', 'equity', 'income'].includes(a.type);
+        return {
+          code: a.code,
+          name: a.name,
+          type: a.type,
+          debit: (!isCreditNature && bal >= 0) || (isCreditNature && bal < 0) ? Math.abs(bal) : 0,
+          credit: (isCreditNature && bal >= 0) || (!isCreditNature && bal < 0) ? Math.abs(bal) : 0
+        };
+      });
+    return {
+      assets,
+      liabilities,
+      equity,
+      retained,
+      totalAssets,
+      totalLiabilities,
+      totalEquity,
+      trial,
+      trialDebit: trial.reduce((s, r) => s + r.debit, 0),
+      trialCredit: trial.reduce((s, r) => s + r.credit, 0),
+      inventoryFallback: totals?.inventoryValue || 0
+    };
+  }, [accounts, totals]);
   const [useAllTimeData, setUseAllTimeData] = useState(true); // Default to all-time data to show invoice data
   const [exportSettings, setExportSettings] = useState({
     format: 'PDF',
@@ -756,7 +801,43 @@ export default function Reports() {
     );
   }
 
+  if (showTrialBalance) {
+    return (
+      <ReportsContainer>
+        <TopBar>
+          <BackButton onClick={() => setShowTrialBalance(false)}>
+            <FiArrowLeft />
+          </BackButton>
+          <Title>Trial Balance</Title>
+          <div></div>
+        </TopBar>
+        <ContentArea>
+          <p style={{ color: '#64748b', marginTop: 0 }}>From live general ledger account balances</p>
+          <FinancialCard>
+            {glStatements.trial.map((row) => (
+              <FinancialRow key={row.code}>
+                <FinancialLabel>{row.code} — {row.name}</FinancialLabel>
+                <div style={{ display: 'flex', gap: '1.5rem', minWidth: 180, justifyContent: 'flex-end' }}>
+                  <span>{row.debit ? formatCurrency(row.debit) : '—'}</span>
+                  <span>{row.credit ? formatCurrency(row.credit) : '—'}</span>
+                </div>
+              </FinancialRow>
+            ))}
+            <FinancialRow style={{ backgroundColor: '#f0fdf4', fontWeight: 700 }}>
+              <FinancialLabel>Totals</FinancialLabel>
+              <div style={{ display: 'flex', gap: '1.5rem', minWidth: 180, justifyContent: 'flex-end' }}>
+                <span>{formatCurrency(glStatements.trialDebit)}</span>
+                <span>{formatCurrency(glStatements.trialCredit)}</span>
+              </div>
+            </FinancialRow>
+          </FinancialCard>
+        </ContentArea>
+      </ReportsContainer>
+    );
+  }
+
   if (showBalanceSheet) {
+    const { assets, liabilities, equity, retained, totalAssets, totalLiabilities, totalEquity } = glStatements;
     return (
       <ReportsContainer>
         <TopBar>
@@ -768,51 +849,56 @@ export default function Reports() {
         </TopBar>
 
         <ContentArea>
+          <p style={{ color: '#64748b', marginTop: 0 }}>Built from live GL account balances (not sample data)</p>
           <SectionTitle>Assets</SectionTitle>
           <FinancialCard>
-            <FinancialRow>
-              <FinancialLabel>Cash</FinancialLabel>
-              <FinancialValue>{formatCurrency(12500)}</FinancialValue>
-            </FinancialRow>
-            <FinancialRow>
-              <FinancialLabel>Accounts Receivable</FinancialLabel>
-              <FinancialValue>{formatCurrency(5000)}</FinancialValue>
-            </FinancialRow>
-            <FinancialRow>
-              <FinancialLabel>Inventory</FinancialLabel>
-              <FinancialValue>{formatCurrency(2500)}</FinancialValue>
-            </FinancialRow>
-            <FinancialRow>
-              <FinancialLabel>Equipment</FinancialLabel>
-              <FinancialValue>{formatCurrency(10000)}</FinancialValue>
-            </FinancialRow>
+            {assets.map((a) => (
+              <FinancialRow key={a.code || a.id}>
+                <FinancialLabel>{a.code} — {a.name}</FinancialLabel>
+                <FinancialValue>{formatCurrency(a.balance || 0)}</FinancialValue>
+              </FinancialRow>
+            ))}
+            {assets.length === 0 && (
+              <FinancialRow>
+                <FinancialLabel>No asset accounts yet</FinancialLabel>
+                <FinancialValue>{formatCurrency(0)}</FinancialValue>
+              </FinancialRow>
+            )}
             <FinancialRow style={{ backgroundColor: '#f0fdf4', fontWeight: '700', fontSize: '1rem' }}>
               <FinancialLabel>Total Assets</FinancialLabel>
-              <FinancialValue positive>{formatCurrency(30000)}</FinancialValue>
+              <FinancialValue positive>{formatCurrency(totalAssets)}</FinancialValue>
             </FinancialRow>
           </FinancialCard>
 
           <SectionTitle>Liabilities</SectionTitle>
           <FinancialCard>
-            <FinancialRow>
-              <FinancialLabel>Accounts Payable</FinancialLabel>
-              <FinancialValue>{formatCurrency(2000)}</FinancialValue>
-            </FinancialRow>
-            <FinancialRow>
-              <FinancialLabel>Loans</FinancialLabel>
-              <FinancialValue>{formatCurrency(3000)}</FinancialValue>
-            </FinancialRow>
+            {liabilities.map((a) => (
+              <FinancialRow key={a.code || a.id}>
+                <FinancialLabel>{a.code} — {a.name}</FinancialLabel>
+                <FinancialValue>{formatCurrency(a.balance || 0)}</FinancialValue>
+              </FinancialRow>
+            ))}
             <FinancialRow style={{ backgroundColor: '#f0fdf4', fontWeight: '700', fontSize: '1rem' }}>
               <FinancialLabel>Total Liabilities</FinancialLabel>
-              <FinancialValue>{formatCurrency(5000)}</FinancialValue>
+              <FinancialValue>{formatCurrency(totalLiabilities)}</FinancialValue>
             </FinancialRow>
           </FinancialCard>
 
           <SectionTitle>Equity</SectionTitle>
           <FinancialCard>
+            {equity.map((a) => (
+              <FinancialRow key={a.code || a.id}>
+                <FinancialLabel>{a.code} — {a.name}</FinancialLabel>
+                <FinancialValue>{formatCurrency(a.balance || 0)}</FinancialValue>
+              </FinancialRow>
+            ))}
             <FinancialRow>
-              <FinancialLabel>Owner's Equity</FinancialLabel>
-              <FinancialValue>{formatCurrency(25000)}</FinancialValue>
+              <FinancialLabel>Retained earnings (P&amp;L to date)</FinancialLabel>
+              <FinancialValue>{formatCurrency(retained)}</FinancialValue>
+            </FinancialRow>
+            <FinancialRow style={{ backgroundColor: '#f0fdf4', fontWeight: '700', fontSize: '1rem' }}>
+              <FinancialLabel>Total Equity</FinancialLabel>
+              <FinancialValue>{formatCurrency(totalEquity)}</FinancialValue>
             </FinancialRow>
           </FinancialCard>
 
@@ -830,8 +916,8 @@ export default function Reports() {
             fontWeight: '600',
             fontSize: '1rem'
           }}>
-            <span>Total Liabilities & Equity</span>
-            <span>{formatCurrency(30000)}</span>
+            <span>Total Liabilities &amp; Equity</span>
+            <span>{formatCurrency(totalLiabilities + totalEquity)}</span>
           </div>
         </ContentArea>
       </ReportsContainer>
@@ -1054,7 +1140,7 @@ export default function Reports() {
               </FinancialRow>
             </>
           )}
-          <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+          <div style={{ marginTop: '1rem', textAlign: 'center', display: 'flex', gap: '0.5rem', justifyContent: 'center', flexWrap: 'wrap' }}>
             <button 
               onClick={handleViewBalanceSheet}
               style={{
@@ -1067,7 +1153,21 @@ export default function Reports() {
                 cursor: 'pointer'
               }}
             >
-              View Detailed Balance Sheet
+              View GL Balance Sheet
+            </button>
+            <button 
+              onClick={() => setShowTrialBalance(true)}
+              style={{
+                background: 'none',
+                border: '1px solid #0f766e',
+                color: '#0f766e',
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                fontSize: '0.875rem',
+                cursor: 'pointer'
+              }}
+            >
+              Trial Balance
             </button>
           </div>
         </FinancialCard>

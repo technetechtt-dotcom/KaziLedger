@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import styled from 'styled-components';
-import { FiArrowLeft, FiUpload, FiDownload } from 'react-icons/fi';
+import { FiArrowLeft, FiUpload, FiDownload, FiZap } from 'react-icons/fi';
 import { useAccountingExtensions } from '../context/AccountingExtensionsContext';
 import { useFinancialData } from '../context/FinancialDataContext';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { toast } from 'react-toastify';
 import { downloadExcel, stamp } from '../utils/downloadExport';
+import { suggestBankMatches, autoReconcileBankFeed } from '../utils/bankAutoMatch';
 
 const Page = styled.div`padding: 1rem; max-width: 1000px; margin: 0 auto;`;
 const Card = styled.div`background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1rem; margin-bottom: 1rem;`;
@@ -140,6 +141,51 @@ export default function BankFeeds() {
     toast.success('Bank feed Excel downloaded');
   };
 
+  const applyMatchSideEffects = async (tx, opt) => {
+    const absAmount = Math.abs(parseFloat(tx.amount) || 0);
+    if (opt.type === 'invoice' && absAmount > 0) {
+      const payResult = await recordPayment(opt.id, {
+        amount: absAmount,
+        date: tx.date || new Date().toISOString().split('T')[0],
+        method: 'bank',
+        notes: `Bank reconcile: ${tx.description || ''}`
+      });
+      if (!payResult.success) throw new Error(payResult.error || 'Payment failed');
+    } else if (opt.type === 'expense' && absAmount > 0) {
+      const journalResult = await postJournal({
+        memo: `Bank reconcile expense: ${tx.description || opt.label || ''}`,
+        date: tx.date || new Date().toISOString().split('T')[0],
+        lines: [
+          { accountCode: '5100', debit: absAmount, credit: 0, memo: opt.label },
+          { accountCode: '1000', debit: 0, credit: absAmount, memo: 'Bank' }
+        ]
+      });
+      if (!journalResult.success) throw new Error(journalResult.error || 'Journal failed');
+    }
+  };
+
+  const handleAutoMatch = async () => {
+    const sources = { invoices, expenses, income };
+    const result = await autoReconcileBankFeed(
+      txs,
+      sources,
+      async (txId, match) => {
+        const tx = txs.find((t) => t.id === txId);
+        const r = await reconcileBankTransaction(txId, match);
+        if (!r.success || !tx) return r;
+        try {
+          await applyMatchSideEffects(tx, match);
+        } catch (e) {
+          toast.warn(`Matched ${match.label}, but follow-up failed: ${e.message}`);
+        }
+        return r;
+      },
+      { minScore: 70 }
+    );
+    if (result.matched) toast.success(`Auto-matched ${result.matched} transaction${result.matched === 1 ? '' : 's'}`);
+    else toast.info('No high-confidence matches found');
+  };
+
   return (
     <Page>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -152,9 +198,14 @@ export default function BankFeeds() {
             <p style={{ margin: 0, color: '#64748b' }}>Accounts, CSV import, and reconciliation</p>
           </div>
         </div>
-        <Button type="button" onClick={handleExport} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#0f766e' }}>
-          <FiDownload /> Download Excel
-        </Button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <Button type="button" onClick={handleAutoMatch} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+            <FiZap /> Auto-match
+          </Button>
+          <Button type="button" onClick={handleExport} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#0f766e' }}>
+            <FiDownload /> Download Excel
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -189,18 +240,50 @@ export default function BankFeeds() {
 
       <Card>
         <h3 style={{ marginTop: 0 }}>Reconcile</h3>
+        <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
+          Suggestions score amount, invoice # / reference, and customer or vendor name. Use Auto-match for high-confidence hits.
+        </p>
         {txs.length === 0 && <p style={{ color: '#64748b' }}>No bank transactions yet</p>}
-        {txs.map((tx) => (
+        {txs.map((tx) => {
+          const suggestions = tx.status === 'reconciled'
+            ? []
+            : suggestBankMatches(tx, { invoices, expenses, income });
+          const best = suggestions[0];
+          return (
           <div key={tx.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr auto', gap: '0.75rem', padding: '0.75rem 0', borderBottom: '1px solid #e2e8f0', alignItems: 'center' }}>
             <div>
               <div style={{ fontWeight: 600 }}>{tx.description}</div>
               <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{tx.date} · {tx.reference || 'No ref'}</div>
+              {best && (
+                <div style={{ fontSize: '0.75rem', color: '#0f766e', marginTop: 4 }}>
+                  Suggested: {best.label} ({best.score}% · {best.reason})
+                </div>
+              )}
             </div>
             <div>
               <div style={{ fontWeight: 700, color: tx.amount >= 0 ? '#16a34a' : '#dc2626' }}>{formatCurrency(tx.amount)}</div>
               <div style={{ fontSize: '0.8rem' }}>{tx.status}{tx.matchedLabel ? ` · ${tx.matchedLabel}` : ''}</div>
             </div>
             {tx.status !== 'reconciled' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'stretch' }}>
+                {best && best.score >= 55 && (
+                  <Button
+                    type="button"
+                    style={{ padding: '0.35rem 0.6rem', fontSize: '0.8rem' }}
+                    onClick={async () => {
+                      const result = await reconcileBankTransaction(tx.id, best);
+                      if (!result.success) return alert(result.error);
+                      try {
+                        await applyMatchSideEffects(tx, best);
+                        toast.success('Matched suggestion');
+                      } catch (e) {
+                        toast.warn(`Matched, but follow-up failed: ${e.message}`);
+                      }
+                    }}
+                  >
+                    Accept suggestion
+                  </Button>
+                )}
               <Select
                 defaultValue=""
                 onChange={async (e) => {
@@ -211,34 +294,8 @@ export default function BankFeeds() {
                     alert(result.error);
                     return;
                   }
-
-                  const absAmount = Math.abs(parseFloat(tx.amount) || 0);
                   try {
-                    if (opt.type === 'invoice' && absAmount > 0) {
-                      const payResult = await recordPayment(opt.id, {
-                        amount: absAmount,
-                        date: tx.date || new Date().toISOString().split('T')[0],
-                        method: 'bank',
-                        notes: `Bank reconcile: ${tx.description || ''}`
-                      });
-                      if (!payResult.success) {
-                        toast.warn(`Reconciled, but payment failed: ${payResult.error}`);
-                        return;
-                      }
-                    } else if (opt.type === 'expense' && absAmount > 0) {
-                      const journalResult = await postJournal({
-                        memo: `Bank reconcile expense: ${tx.description || opt.label || ''}`,
-                        date: tx.date || new Date().toISOString().split('T')[0],
-                        lines: [
-                          { accountCode: '5100', debit: absAmount, credit: 0, memo: opt.label },
-                          { accountCode: '1000', debit: 0, credit: absAmount, memo: 'Bank' }
-                        ]
-                      });
-                      if (!journalResult.success) {
-                        toast.warn(`Reconciled, but journal failed: ${journalResult.error}`);
-                        return;
-                      }
-                    }
+                    await applyMatchSideEffects(tx, opt);
                     toast.success('Reconciled');
                   } catch (sideEffectError) {
                     toast.warn(`Reconciled, but follow-up failed: ${sideEffectError.message}`);
@@ -246,10 +303,16 @@ export default function BankFeeds() {
                 }}
               >
                 <option value="">Match to…</option>
+                {suggestions.map((m) => (
+                  <option key={`sug-${m.type}:${m.id}`} value={`${m.type}:${m.id}`}>
+                    ★ {m.label} ({m.score})
+                  </option>
+                ))}
                 {matchOptions.map((m) => (
                   <option key={`${m.type}:${m.id}`} value={`${m.type}:${m.id}`}>{m.label}</option>
                 ))}
               </Select>
+              </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-end' }}>
                 <span style={{ color: '#16a34a', fontSize: '0.85rem' }}>Matched</span>
@@ -275,7 +338,8 @@ export default function BankFeeds() {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </Card>
     </Page>
   );

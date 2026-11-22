@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useFirebaseBusiness } from './FirebaseBusinessContext';
+import { calculatePayrollDeductions } from '../utils/saTax';
 
 const AccountingExtensionsContext = createContext();
 
@@ -349,17 +350,15 @@ export function AccountingExtensionsProvider({ children }) {
       if (!selected.length) throw new Error('No active employees selected');
 
       const lines = selected.map((emp) => {
-        const gross = parseFloat(emp.salary) || 0;
-        const tax = +(gross * 0.18).toFixed(2);
-        const uif = +(gross * 0.01).toFixed(2);
-        const net = +(gross - tax - uif).toFixed(2);
+        const { gross, tax, uif, net } = calculatePayrollDeductions(emp.salary);
         return {
           employeeId: emp.id,
           employeeName: emp.name,
           gross,
           tax,
           uif,
-          net
+          net,
+          taxMethod: 'sars_paye_2026'
         };
       });
 

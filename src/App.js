@@ -35,6 +35,8 @@ const POS = lazy(() => import('./pages/POS'));
 const ForeignExchange = lazy(() => import('./pages/ForeignExchange'));
 const VatReturns = lazy(() => import('./pages/VatReturns'));
 const Documents = lazy(() => import('./pages/Documents'));
+const Suppliers = lazy(() => import('./pages/Suppliers'));
+const Tasks = lazy(() => import('./pages/Tasks'));
 
 const AppContainer = styled.div`
   display: flex;
@@ -117,7 +119,7 @@ function AppContent() {
     return (
       <LoadingContainer>
         <LoadingSpinner />
-        <LoadingText>Loading Business Operations App...</LoadingText>
+        <LoadingText>Loading KaziLedger...</LoadingText>
       </LoadingContainer>
     );
   }
@@ -166,6 +168,8 @@ function AppContent() {
               <Route path="/pos" element={<POS />} />
               <Route path="/fx" element={<ForeignExchange />} />
               <Route path="/vat-returns" element={<VatReturns />} />
+              <Route path="/suppliers" element={<Suppliers />} />
+              <Route path="/tasks" element={<Tasks />} />
             </Routes>
           </Suspense>
         </MobileContent>

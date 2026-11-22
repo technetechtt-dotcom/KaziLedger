@@ -10,6 +10,7 @@ import { AppointmentProvider } from '../context/AppointmentContext';
 import { ComplianceProvider } from '../context/ComplianceContext';
 import { AccountingExtensionsProvider } from '../context/AccountingExtensionsContext';
 import { DocumentLibraryProvider } from '../context/DocumentLibraryContext';
+import { BusinessOpsProvider } from '../context/BusinessOpsContext';
 
 // Create a QueryClient instance with optimized defaults
 const queryClient = new QueryClient({
@@ -39,11 +40,13 @@ export function AppProviders({ children }) {
                 <ComplianceProvider>
                   <DocumentLibraryProvider>
                     <AccountingExtensionsProvider>
-                      <CurrencyProvider>
-                        <BusinessBrandingProvider>
-                          {children}
-                        </BusinessBrandingProvider>
-                      </CurrencyProvider>
+                      <BusinessOpsProvider>
+                        <CurrencyProvider>
+                          <BusinessBrandingProvider>
+                            {children}
+                          </BusinessBrandingProvider>
+                        </CurrencyProvider>
+                      </BusinessOpsProvider>
                     </AccountingExtensionsProvider>
                   </DocumentLibraryProvider>
                 </ComplianceProvider>

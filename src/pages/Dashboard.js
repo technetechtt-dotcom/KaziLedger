@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import styled from 'styled-components';
 import { 
   FiPlus, 
@@ -6,7 +7,17 @@ import {
   FiDollarSign,
   FiArrowLeft,
   FiEdit2,
-  FiTrash2
+  FiTrash2,
+  FiUsers,
+  FiPackage,
+  FiShield,
+  FiBriefcase,
+  FiTruck,
+  FiCheckSquare,
+  FiCalendar,
+  FiBarChart,
+  FiShoppingCart,
+  FiAlertCircle
 } from 'react-icons/fi';
 import {
   BarChart,
@@ -20,6 +31,9 @@ import {
 } from 'recharts';
 import { useCurrency } from '../contexts/CurrencyContext';
 import { useFinancialData } from '../context/FinancialDataContext';
+import { useCompliance } from '../context/ComplianceContext';
+import { useAppointment } from '../context/AppointmentContext';
+import { useBusinessOps } from '../context/BusinessOpsContext';
 
 const DashboardContainer = styled.div`
   padding: 1rem;
@@ -69,6 +83,88 @@ const Title = styled.h1`
   flex: 1;
 `;
 
+
+const HubIntro = styled.p`
+  color: #64748b;
+  font-size: 0.95rem;
+  margin: 0 0 1.25rem 0.5rem;
+  max-width: 40rem;
+`;
+
+const DomainGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+`;
+
+const DomainLink = styled(Link)`
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  text-decoration: none;
+  color: #1e293b;
+  transition: border-color 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    border-color: #14b8a6;
+    background: #f0fdfa;
+  }
+`;
+
+const DomainIcon = styled.span`
+  color: #0f766e;
+  font-size: 1.15rem;
+`;
+
+const DomainLabel = styled.span`
+  font-weight: 600;
+  font-size: 0.875rem;
+`;
+
+const DomainHint = styled.span`
+  font-size: 0.75rem;
+  color: #64748b;
+`;
+
+const ActionList = styled.div`
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+`;
+
+const ActionRow = styled(Link)`
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #f1f5f9;
+  text-decoration: none;
+  color: inherit;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: #f8fafc;
+  }
+`;
+
+const ActionBadge = styled.span`
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: ${p => (p.$tone === 'danger' ? '#dc2626' : p.$tone === 'warn' ? '#d97706' : '#0f766e')};
+  min-width: 5.5rem;
+`;
 
 const SummaryCards = styled.div`
   display: grid;
@@ -341,6 +437,9 @@ export default function Dashboard() {
     income,
     expenses
   } = useFinancialData();
+  const { getExpiringDocuments, getOverdueDocuments } = useCompliance();
+  const { getUpcomingAppointments } = useAppointment();
+  const { bills, tasks } = useBusinessOps();
   const [activeTab, setActiveTab] = useState('expense');
   const [activePeriod, setActivePeriod] = useState('daily');
   const [editingIncomeId, setEditingIncomeId] = useState(null);
@@ -670,6 +769,118 @@ export default function Dashboard() {
   // const upcomingInvoices = getUpcomingInvoices(); // Removed unused variable
   const recentQuotes = getRecentQuotes();
 
+  const actionItems = useMemo(() => {
+    const items = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    outstandingInvoices.forEach((inv) => {
+      items.push({
+        id: `ar-${inv.id}`,
+        tone: 'danger',
+        area: 'Sales',
+        title: `Overdue invoice ${inv.invoiceNumber || ''}`.trim(),
+        detail: inv.clientName || inv.customerName || '',
+        to: '/invoices'
+      });
+    });
+
+    (bills || [])
+      .filter((b) => b.status !== 'paid' && b.dueDate && new Date(b.dueDate) < today)
+      .slice(0, 5)
+      .forEach((b) => {
+        items.push({
+          id: `ap-${b.id}`,
+          tone: 'danger',
+          area: 'Finance',
+          title: `Supplier bill overdue — ${b.supplierName || 'Supplier'}`,
+          detail: b.description || '',
+          to: '/suppliers'
+        });
+      });
+
+    if ((totals.lowStockItems || 0) > 0) {
+      items.push({
+        id: 'stock',
+        tone: 'warn',
+        area: 'Ops',
+        title: `${totals.lowStockItems} low-stock item${totals.lowStockItems === 1 ? '' : 's'}`,
+        detail: 'Reorder before you run out',
+        to: '/inventory'
+      });
+    }
+
+    (getOverdueDocuments() || []).slice(0, 3).forEach((docItem) => {
+      items.push({
+        id: `exp-${docItem.id}`,
+        tone: 'danger',
+        area: 'Compliance',
+        title: `Expired: ${docItem.name || docItem.title || 'Document'}`,
+        detail: docItem.type || '',
+        to: '/compliance'
+      });
+    });
+
+    (getExpiringDocuments(30) || []).slice(0, 3).forEach((docItem) => {
+      items.push({
+        id: `expiring-${docItem.id}`,
+        tone: 'warn',
+        area: 'Compliance',
+        title: `Expiring soon: ${docItem.name || docItem.title || 'Document'}`,
+        detail: docItem.expiryDate ? new Date(docItem.expiryDate).toLocaleDateString() : '',
+        to: '/compliance'
+      });
+    });
+
+    (getUpcomingAppointments(2) || []).slice(0, 3).forEach((apt) => {
+      items.push({
+        id: `apt-${apt.id}`,
+        tone: 'info',
+        area: 'Ops',
+        title: apt.title || apt.customerName || 'Upcoming appointment',
+        detail: apt.date || apt.startTime || '',
+        to: '/appointments'
+      });
+    });
+
+    (tasks || [])
+      .filter((t) => t.status !== 'done')
+      .slice(0, 4)
+      .forEach((t) => {
+        items.push({
+          id: `task-${t.id}`,
+          tone: t.priority === 'high' ? 'warn' : 'info',
+          area: t.area || 'Ops',
+          title: t.title,
+          detail: t.dueDate || '',
+          to: '/tasks'
+        });
+      });
+
+    return items.slice(0, 12);
+  }, [
+    outstandingInvoices,
+    bills,
+    totals.lowStockItems,
+    getOverdueDocuments,
+    getExpiringDocuments,
+    getUpcomingAppointments,
+    tasks
+  ]);
+
+  const domains = [
+    { to: '/invoices', icon: FiFileText, label: 'Sales', hint: 'Quotes, invoices, POS' },
+    { to: '/customers', icon: FiUsers, label: 'Customers', hint: 'CRM & statements' },
+    { to: '/inventory', icon: FiPackage, label: 'Operations', hint: 'Stock & suppliers' },
+    { to: '/suppliers', icon: FiTruck, label: 'Payables', hint: 'Bills & vendors' },
+    { to: '/reports', icon: FiBarChart, label: 'Finance', hint: 'Books & reports' },
+    { to: '/payroll', icon: FiBriefcase, label: 'HR', hint: 'Payroll & time' },
+    { to: '/compliance', icon: FiShield, label: 'Compliance', hint: 'Licences & tax docs' },
+    { to: '/tasks', icon: FiCheckSquare, label: 'Tasks', hint: 'Daily ops checklist' },
+    { to: '/appointments', icon: FiCalendar, label: 'Schedule', hint: 'Bookings' },
+    { to: '/pos', icon: FiShoppingCart, label: 'POS', hint: 'Sell in person' }
+  ];
+
   return (
     <DashboardContainer>
       <Header>
@@ -677,10 +888,44 @@ export default function Dashboard() {
           <BackButton onClick={() => window.history.back()} title="Go back">
             <FiArrowLeft />
           </BackButton>
-          <Title>Home</Title>
+          <Title>Business command center</Title>
         </div>
         <div></div>
       </Header>
+
+      <HubIntro>
+        Run sales, operations, bookkeeping, finance, HR, and compliance from one place — act on what needs attention today.
+      </HubIntro>
+
+      <DomainGrid>
+        {domains.map((d) => (
+          <DomainLink key={d.to} to={d.to}>
+            <DomainIcon><d.icon /></DomainIcon>
+            <DomainLabel>{d.label}</DomainLabel>
+            <DomainHint>{d.hint}</DomainHint>
+          </DomainLink>
+        ))}
+      </DomainGrid>
+
+      <ActionList>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+          <FiAlertCircle style={{ color: '#0f766e' }} />
+          <strong style={{ fontSize: '1rem' }}>Needs attention</strong>
+        </div>
+        {actionItems.length === 0 ? (
+          <p style={{ color: '#64748b', margin: '0.5rem 0 0' }}>You&apos;re clear — no overdue items, low stock, or open tasks right now.</p>
+        ) : (
+          actionItems.map((item) => (
+            <ActionRow key={item.id} to={item.to}>
+              <ActionBadge $tone={item.tone}>{item.area}</ActionBadge>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{item.title}</div>
+                {item.detail && <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{item.detail}</div>}
+              </div>
+            </ActionRow>
+          ))
+        )}
+      </ActionList>
 
       {/* <BusinessAnalytics /> */}
 

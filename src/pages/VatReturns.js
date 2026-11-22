@@ -26,6 +26,13 @@ export default function VatReturns() {
     new Date(now.getFullYear(), now.getMonth() - (now.getMonth() % 2), 1).toISOString().split('T')[0]
   );
   const [periodEnd, setPeriodEnd] = useState(new Date().toISOString().split('T')[0]);
+  const [checklist, setChecklist] = useState({
+    invoicesCaptured: false,
+    creditsReviewed: false,
+    expenseVatValid: false,
+    zeroRatedReviewed: false,
+    readyToFile: false
+  });
   const vatRate = 15;
 
   const calc = useMemo(
@@ -33,7 +40,7 @@ export default function VatReturns() {
     [invoices, expenses, periodStart, periodEnd]
   );
 
-  const handleSave = async () => {
+  const handleSave = async (status = 'draft') => {
     const result = await saveVatReturn({
       periodStart,
       periodEnd,
@@ -42,10 +49,12 @@ export default function VatReturns() {
       sales: undefined,
       credits: undefined,
       deductibleExpenses: undefined,
-      status: 'draft',
-      form: 'VAT201'
+      checklist,
+      status,
+      form: 'VAT201',
+      filedAt: status === 'filed' ? new Date().toISOString() : null
     });
-    if (result.success) toast.success('VAT201 draft saved');
+    if (result.success) toast.success(status === 'filed' ? 'Marked as filed (record only)' : 'VAT201 draft saved');
     else alert(result.error);
   };
 
@@ -104,7 +113,19 @@ export default function VatReturns() {
             <div style={{ fontSize: '0.8rem', marginBottom: 4 }}>Period end</div>
             <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
           </div>
-          <Button type="button" onClick={handleSave}>Save draft</Button>
+          <Button type="button" onClick={() => handleSave('draft')}>Save draft</Button>
+          <Button
+            type="button"
+            onClick={() => {
+              if (!Object.values(checklist).every(Boolean)) {
+                return toast.info('Complete the SARS checklist before marking filed');
+              }
+              handleSave('filed');
+            }}
+            style={{ background: '#115e59' }}
+          >
+            Mark filed
+          </Button>
           <Button type="button" onClick={handleExport} style={{ background: '#0f766e' }}>
             <FiDownload /> Excel
           </Button>
@@ -157,13 +178,29 @@ export default function VatReturns() {
       </Card>
 
       <Card>
-        <h3 style={{ marginTop: 0 }}>Submission checklist</h3>
-        <ul style={{ margin: 0, paddingLeft: '1.2rem', color: '#334155', lineHeight: 1.6 }}>
-          <li>All tax invoices for the period are captured ({calc.salesCount} sales, {calc.creditsCount} credits)</li>
-          <li>Expense VAT comes from supplier tax invoices ({calc.deductibleExpenses.length} deductible expenses)</li>
-          <li>Zero-rated / exempt sales reviewed</li>
-          <li>This draft is for internal use — submit via SARS eFiling when ready</li>
-        </ul>
+        <h3 style={{ marginTop: 0 }}>SARS eFiling checklist (VAT201)</h3>
+        <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
+          Tick each step, then submit on SARS eFiling. KaziLedger stores the draft — it does not eFile for you.
+        </p>
+        {[
+          { key: 'invoicesCaptured', label: `All tax invoices captured (${calc.salesCount} sales)` },
+          { key: 'creditsReviewed', label: `Credit notes reviewed (${calc.creditsCount})` },
+          { key: 'expenseVatValid', label: `Input VAT from tax invoices only (${calc.deductibleExpenses.length} expenses)` },
+          { key: 'zeroRatedReviewed', label: 'Zero-rated / exempt supplies reviewed' },
+          { key: 'readyToFile', label: 'Ready to capture on SARS eFiling (VAT201)' }
+        ].map((item) => (
+          <label key={item.key} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+            <input
+              type="checkbox"
+              checked={!!checklist[item.key]}
+              onChange={(e) => setChecklist((p) => ({ ...p, [item.key]: e.target.checked }))}
+            />
+            <span>{item.label}</span>
+          </label>
+        ))}
+        <a href="https://www.sarsefiling.co.za/" target="_blank" rel="noopener noreferrer" style={{ color: '#0f766e', fontSize: '0.875rem' }}>
+          Open SARS eFiling →
+        </a>
       </Card>
 
       <Card>

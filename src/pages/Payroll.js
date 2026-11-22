@@ -349,6 +349,30 @@ export default function Payroll() {
       </Card>
 
       <Card>
+        <h3 style={{ marginTop: 0 }}>SARS payroll filing checklist</h3>
+        <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
+          After each pay run, complete these declarations on SARS eFiling / e@syFile. Figures below are from your latest posted run.
+        </p>
+        {payRuns[0] ? (
+          <div style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+            Latest run {payRuns[0].periodStart} → {payRuns[0].periodEnd}: PAYE {formatCurrency(payRuns[0].totals?.tax || 0)} · UIF {formatCurrency(payRuns[0].totals?.uif || 0)} · Net {formatCurrency(payRuns[0].totals?.net || 0)}
+          </div>
+        ) : (
+          <p style={{ color: '#64748b' }}>Post a pay run to populate EMP201 amounts.</p>
+        )}
+        <ul style={{ margin: 0, paddingLeft: '1.2rem', lineHeight: 1.7, fontSize: '0.9rem' }}>
+          <li>EMP201 — declare PAYE / UIF / SDL for the month</li>
+          <li>Pay over deductions to SARS by the due date</li>
+          <li>Issue payslips to employees (use Download / Send above)</li>
+          <li>IRP5 / IT3(a) — annual employees&apos; tax certificates</li>
+          <li>Reconcile payroll GL (5200 / 2200 / 2100) to EMP201</li>
+        </ul>
+        <a href="https://www.sarsefiling.co.za/" target="_blank" rel="noopener noreferrer" style={{ color: '#0f766e', fontSize: '0.875rem' }}>
+          Open SARS eFiling →
+        </a>
+      </Card>
+
+      <Card>
         <h3 style={{ marginTop: 0 }}>Pay runs & payslips</h3>
         {payRuns.map((run) => (
           <div key={run.id} style={{ padding: '0.85rem 0', borderBottom: '1px solid #e2e8f0' }}>

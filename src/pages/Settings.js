@@ -1271,6 +1271,31 @@ export default function Settings() {
         </TopBar>
 
         <ContentArea>
+          <SectionTitle>Workspace access role</SectionTitle>
+          <SectionSubtitle>
+            Controls which menus and pages this signed-in account can open (owner has full access)
+          </SectionSubtitle>
+          <div style={{ marginBottom: '1.5rem' }}>
+            <Select
+              value={business?.role || USER_ROLES.OWNER}
+              onChange={async (e) => {
+                const role = e.target.value;
+                try {
+                  await updateBusiness({ role });
+                  alert(`Access role set to ${role}`);
+                } catch (err) {
+                  alert(err.message || 'Failed to update role');
+                }
+              }}
+              style={{ maxWidth: 280 }}
+            >
+              <option value={USER_ROLES.OWNER}>Owner — full access</option>
+              <option value={USER_ROLES.ADMIN}>Administrator — full access</option>
+              <option value={USER_ROLES.MANAGER}>Manager — limited admin</option>
+              <option value={USER_ROLES.EMPLOYEE}>Employee — sales & view</option>
+            </Select>
+          </div>
+
           <SectionTitle>Manage Users</SectionTitle>
           <SectionSubtitle>Assign roles and customize access levels</SectionSubtitle>
 

@@ -39,6 +39,13 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Customer portal — public read of denormalized snapshots; only owner may write
+    match /publicPortal/{token} {
+      allow read: if true;
+      allow create, update: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
     // Deny everything else by default (no open catch-all)
   }
 }

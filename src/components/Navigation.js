@@ -22,10 +22,13 @@ import {
   FiPercent,
   FiFolder,
   FiTruck,
-  FiCheckSquare
+  FiCheckSquare,
+  FiMail
 } from 'react-icons/fi';
 import { signOutUser } from '../firebase/auth';
 import { logAnalyticsEvent, AnalyticsEvents } from '../utils/analytics';
+import { useUser, PERMISSIONS } from '../context/UserContext';
+import { useFirebaseBusiness } from '../context/FirebaseBusinessContext';
 
 const NavigationContainer = styled.nav`
   position: fixed;
@@ -240,45 +243,46 @@ const navSections = [
   {
     title: 'Sales & customers',
     items: [
-      { path: '/quotes', icon: FiFileText, label: 'Quotes' },
-      { path: '/invoices', icon: FiReceipt, label: 'Invoices' },
-      { path: '/pos', icon: FiShoppingCart, label: 'POS' },
-      { path: '/customers', icon: FiUsers, label: 'Customers' },
-      { path: '/statements', icon: FiCreditCard, label: 'Statements' },
+      { path: '/quotes', icon: FiFileText, label: 'Quotes', permission: PERMISSIONS.VIEW_QUOTES },
+      { path: '/invoices', icon: FiReceipt, label: 'Invoices', permission: PERMISSIONS.VIEW_INVOICES },
+      { path: '/pos', icon: FiShoppingCart, label: 'POS', permission: PERMISSIONS.CREATE_INVOICES },
+      { path: '/customers', icon: FiUsers, label: 'Customers', permission: PERMISSIONS.VIEW_CUSTOMERS },
+      { path: '/statements', icon: FiCreditCard, label: 'Statements', permission: PERMISSIONS.VIEW_INVOICES },
+      { path: '/collections', icon: FiMail, label: 'Collections', permission: PERMISSIONS.SEND_INVOICES },
       { path: '/appointments', icon: FiCalendar, label: 'Appointments' }
     ]
   },
   {
     title: 'Operations',
     items: [
-      { path: '/inventory', icon: FiPackage, label: 'Inventory' },
-      { path: '/suppliers', icon: FiTruck, label: 'Suppliers' },
-      { path: '/purchase-orders', icon: FiPackage, label: 'Purchase Orders' },
+      { path: '/inventory', icon: FiPackage, label: 'Inventory', permission: PERMISSIONS.VIEW_INVENTORY },
+      { path: '/suppliers', icon: FiTruck, label: 'Suppliers', permission: PERMISSIONS.EDIT_FINANCIAL_DATA },
+      { path: '/purchase-orders', icon: FiPackage, label: 'Purchase Orders', permission: PERMISSIONS.EDIT_INVENTORY },
       { path: '/documents', icon: FiFolder, label: 'Documents' },
-      { path: '/scanner', icon: FiCamera, label: 'Scanner' }
+      { path: '/scanner', icon: FiCamera, label: 'Scanner', permission: PERMISSIONS.EDIT_FINANCIAL_DATA }
     ]
   },
   {
     title: 'Finance & accounting',
     items: [
-      { path: '/bank-feeds', icon: FiDollarSign, label: 'Bank Feeds' },
-      { path: '/general-ledger', icon: FiBookOpen, label: 'General Ledger' },
-      { path: '/vat-returns', icon: FiPercent, label: 'VAT Returns' },
-      { path: '/fx', icon: FiGlobe, label: 'FX' },
-      { path: '/reports', icon: FiBarChart, label: 'Reports' }
+      { path: '/bank-feeds', icon: FiDollarSign, label: 'Bank Feeds', permission: PERMISSIONS.VIEW_FINANCIAL_DATA },
+      { path: '/general-ledger', icon: FiBookOpen, label: 'General Ledger', permission: PERMISSIONS.VIEW_FINANCIAL_DATA },
+      { path: '/vat-returns', icon: FiPercent, label: 'VAT Returns', permission: PERMISSIONS.VIEW_FINANCIAL_DATA },
+      { path: '/fx', icon: FiGlobe, label: 'FX', permission: PERMISSIONS.VIEW_FINANCIAL_DATA },
+      { path: '/reports', icon: FiBarChart, label: 'Reports', permission: PERMISSIONS.VIEW_REPORTS }
     ]
   },
   {
     title: 'HR & people',
     items: [
-      { path: '/payroll', icon: FiBriefcase, label: 'Payroll' }
+      { path: '/payroll', icon: FiBriefcase, label: 'Payroll', permission: PERMISSIONS.EDIT_FINANCIAL_DATA }
     ]
   },
   {
     title: 'Compliance & settings',
     items: [
-      { path: '/compliance', icon: FiShield, label: 'Compliance' },
-      { path: '/settings', icon: FiSettings, label: 'Settings' }
+      { path: '/compliance', icon: FiShield, label: 'Compliance', permission: PERMISSIONS.VIEW_SETTINGS },
+      { path: '/settings', icon: FiSettings, label: 'Settings', permission: PERMISSIONS.VIEW_SETTINGS }
     ]
   }
 ];
@@ -286,9 +290,9 @@ const navSections = [
 const bottomNavItems = [
   { path: '/', icon: FiHome, label: 'Home' },
   { path: '/tasks', icon: FiCheckSquare, label: 'Tasks' },
-  { path: '/invoices', icon: FiReceipt, label: 'Sales' },
-  { path: '/reports', icon: FiBarChart, label: 'Finance' },
-  { path: '/compliance', icon: FiShield, label: 'Compliance' }
+  { path: '/invoices', icon: FiReceipt, label: 'Sales', permission: PERMISSIONS.VIEW_INVOICES },
+  { path: '/reports', icon: FiBarChart, label: 'Finance', permission: PERMISSIONS.VIEW_REPORTS },
+  { path: '/compliance', icon: FiShield, label: 'Compliance', permission: PERMISSIONS.VIEW_SETTINGS }
 ];
 
 const renderNavLink = (item, location, closeMobileMenu) => (
@@ -311,6 +315,20 @@ const renderNavLink = (item, location, closeMobileMenu) => (
 export default function Navigation({ isMobileMenuOpen, onCloseMobileMenu }) {
   const location = useLocation();
   const [signingOut, setSigningOut] = useState(false);
+  const { hasPermission } = useUser();
+  const { business } = useFirebaseBusiness();
+  const role = business?.role || 'owner';
+
+  const can = (permission) => !permission || hasPermission(role, permission);
+
+  const visibleSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => can(item.permission))
+    }))
+    .filter((section) => section.items.length > 0);
+
+  const visibleBottom = bottomNavItems.filter((item) => can(item.permission));
 
   const closeMobileMenu = () => {
     if (onCloseMobileMenu) onCloseMobileMenu();
@@ -344,7 +362,7 @@ export default function Navigation({ isMobileMenuOpen, onCloseMobileMenu }) {
             <BrandName>KaziLedger</BrandName>
             <BrandTag>Run your business efficiently</BrandTag>
           </Brand>
-          {navSections.map((section) => (
+          {visibleSections.map((section) => (
             <NavSection key={section.title}>
               <NavTitle>{section.title}</NavTitle>
               <NavList>
@@ -354,6 +372,9 @@ export default function Navigation({ isMobileMenuOpen, onCloseMobileMenu }) {
           ))}
         </NavContent>
         <SignOutSection>
+          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+            Role: {role}
+          </div>
           <SignOutButton
             type="button"
             onClick={handleSignOut}
@@ -369,7 +390,7 @@ export default function Navigation({ isMobileMenuOpen, onCloseMobileMenu }) {
       </NavigationContainer>
 
       <BottomNav>
-        {bottomNavItems.map((item) => (
+        {visibleBottom.map((item) => (
           <BottomNavItem
             key={item.path}
             to={item.path}

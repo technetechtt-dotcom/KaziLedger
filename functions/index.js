@@ -4,6 +4,7 @@
 const { setGlobalOptions } = require('firebase-functions/v2');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
@@ -159,17 +160,21 @@ exports.sendInvoiceEmail = onCall(async (request) => {
   const db = admin.firestore();
   const businessDoc = await db.doc(`users/${userId}/business/profile`).get();
   const business = businessDoc.exists ? businessDoc.data() : {};
+  const isReminder = !!(invoiceData?.reminder || request.data?.reminder);
+  const title = isReminder ? 'Payment reminder' : `Invoice from ${business.name || 'KaziLedger'}`;
+  const portalUrl = invoiceData?.portalUrl || '';
 
   const emailHtml = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <div style="background: #10b981; color: white; padding: 20px; text-align: center;">
-        <h1>Invoice from ${business.name || 'KaziLedger'}</h1>
+        <h1>${title}</h1>
       </div>
       <div style="padding: 20px; background: #f8fafc;">
         <p>Dear ${clientName || 'Customer'},</p>
-        <p>Invoice #${invoiceData?.invoiceNumber || invoiceId}</p>
+        <p>${isReminder ? 'This is a friendly reminder regarding' : 'Please find'} Invoice #${invoiceData?.invoiceNumber || invoiceId}</p>
         <p><strong>Total:</strong> R${Number(invoiceData?.total || invoiceData?.amount || 0).toFixed(2)}</p>
         <p><strong>Due:</strong> ${invoiceData?.dueDate || 'N/A'}</p>
+        ${portalUrl ? `<p><a href="${portalUrl}">View your customer portal</a></p>` : ''}
         <p>${business.name || ''}<br/>${business.email || ''}<br/>${business.phone || ''}</p>
       </div>
     </div>`;
@@ -177,11 +182,23 @@ exports.sendInvoiceEmail = onCall(async (request) => {
   await transporter.sendMail({
     from: emailConfig.auth.user,
     to: clientEmail,
-    subject: `Invoice #${invoiceData?.invoiceNumber || invoiceId} from ${business.name || 'KaziLedger'}`,
+    subject: isReminder
+      ? `Payment reminder — Invoice #${invoiceData?.invoiceNumber || invoiceId}`
+      : `Invoice #${invoiceData?.invoiceNumber || invoiceId} from ${business.name || 'KaziLedger'}`,
     html: emailHtml
   });
 
-  return { message: 'Invoice email sent successfully' };
+  if (isReminder && invoiceId) {
+    try {
+      await db.doc(`users/${userId}/invoices/${invoiceId}`).update({
+        lastReminderSent: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) {
+      logger.warn('Could not stamp lastReminderSent', e);
+    }
+  }
+
+  return { message: isReminder ? 'Payment reminder sent' : 'Invoice email sent successfully' };
 });
 
 exports.calculateBusinessMetrics = onCall(async (request) => {
@@ -306,6 +323,54 @@ exports.sendPaymentReminders = onCall(async (request) => {
     });
   }
   return { message: 'Payment reminders processed', sent };
+});
+
+/** Daily collections drip for businesses with settings/collections.enabled */
+exports.scheduledPaymentReminders = onSchedule('every day 06:00', async () => {
+  const db = admin.firestore();
+  const usersSnap = await db.collection('users').limit(200).get();
+  let totalSent = 0;
+
+  for (const userDoc of usersSnap.docs) {
+    const settingsSnap = await db.doc(`users/${userDoc.id}/settings/collections`).get();
+    if (!settingsSnap.exists() || settingsSnap.data()?.enabled === false) continue;
+
+    const daysOverdue = parseInt(settingsSnap.data()?.daysOverdue, 10) || 7;
+    const cutoff = new Date(Date.now() - daysOverdue * 24 * 60 * 60 * 1000);
+    const invoicesSnap = await db.collection(`users/${userDoc.id}/invoices`).where('status', 'in', ['pending', 'partial']).get();
+    const transporter = getTransporter();
+
+    for (const invoiceDoc of invoicesSnap.docs) {
+      const invoice = invoiceDoc.data();
+      const due = invoice.dueDate ? new Date(invoice.dueDate) : null;
+      if (!due || due > cutoff) continue;
+      const email = invoice.clientEmail || invoice.customer?.email;
+      if (transporter && email) {
+        try {
+          await transporter.sendMail({
+            from: emailConfig.auth.user,
+            to: email,
+            subject: `Payment reminder — Invoice ${invoice.invoiceNumber}`,
+            text: `Reminder: invoice ${invoice.invoiceNumber} for R${Number(invoice.total || invoice.amount || 0).toFixed(2)} is overdue.`
+          });
+          totalSent += 1;
+        } catch (e) {
+          logger.warn('Scheduled reminder failed', e);
+        }
+      }
+      await invoiceDoc.ref.update({
+        lastReminderSent: admin.firestore.FieldValue.serverTimestamp()
+      });
+    }
+
+    await settingsSnap.ref.set({
+      lastRunAt: new Date().toISOString(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+
+  logger.info('scheduledPaymentReminders complete', { totalSent });
+  return null;
 });
 
 exports.backupBusinessData = onCall(async (request) => {

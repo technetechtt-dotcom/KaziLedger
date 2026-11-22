@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import styled from 'styled-components';
-import { FiArrowLeft, FiRefreshCw } from 'react-icons/fi';
+import { FiArrowLeft, FiRefreshCw, FiCloud } from 'react-icons/fi';
 import { useAccountingExtensions } from '../context/AccountingExtensionsContext';
 import { useCurrency } from '../contexts/CurrencyContext';
+import { fetchLiveRatesToZar } from '../utils/liveFx';
 import { toast } from 'react-toastify';
 
 const Page = styled.div`padding: 1rem; max-width: 900px; margin: 0 auto;`;
@@ -19,6 +20,8 @@ export default function ForeignExchange() {
   const { formatCurrency, setDefaultCurrency, defaultCurrency, currencyConfig } = useCurrency();
   const [form, setForm] = useState({ code: 'USD', name: 'US Dollar', rateToBase: '18.50' });
   const [converter, setConverter] = useState({ amount: '100', from: 'USD', to: 'ZAR' });
+  const [liveBusy, setLiveBusy] = useState(false);
+  const [liveMeta, setLiveMeta] = useState(null);
 
   const rates = fxRates.length ? fxRates : [];
 
@@ -30,6 +33,31 @@ export default function ForeignExchange() {
     });
     if (result.success) toast.success('FX rate saved');
     else alert(result.error);
+  };
+
+  const handleLiveRefresh = async () => {
+    setLiveBusy(true);
+    try {
+      const result = await fetchLiveRatesToZar();
+      if (!result.success) {
+        toast.error(result.error || 'Live FX fetch failed');
+        return;
+      }
+      let saved = 0;
+      for (const rate of result.rates) {
+        if (rate.code === 'ZAR') continue;
+        const r = await upsertFxRate(rate.code, {
+          name: rate.name || rate.code,
+          rateToBase: rate.rateToBase
+        });
+        if (r.success) saved += 1;
+      }
+      await upsertFxRate('ZAR', { name: 'South African Rand', rateToBase: 1 });
+      setLiveMeta({ source: result.source, asOf: result.asOf, saved });
+      toast.success(`Updated ${saved} live rates (${result.source})`);
+    } finally {
+      setLiveBusy(false);
+    }
   };
 
   const converted = convertAmount(converter.amount, converter.from, converter.to);
@@ -56,7 +84,22 @@ export default function ForeignExchange() {
       </Card>
 
       <Card>
-        <h3 style={{ marginTop: 0 }}>Update rate</h3>
+        <h3 style={{ marginTop: 0 }}>Live rates</h3>
+        <p style={{ color: '#64748b', fontSize: '0.875rem' }}>
+          Pull market rates (ZAR base) from Frankfurter / open.er-api and save into your FX table for invoices and POS.
+        </p>
+        <Button type="button" onClick={handleLiveRefresh} disabled={liveBusy} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+          <FiCloud /> {liveBusy ? 'Refreshing…' : 'Refresh live rates'}
+        </Button>
+        {liveMeta && (
+          <p style={{ fontSize: '0.8rem', color: '#0f766e', marginBottom: 0 }}>
+            Last live update: {liveMeta.saved} currencies · {liveMeta.source} · {liveMeta.asOf}
+          </p>
+        )}
+      </Card>
+
+      <Card>
+        <h3 style={{ marginTop: 0 }}>Update rate manually</h3>
         <form onSubmit={handleSave}>
           <Row>
             <div style={{ flex: 1, minWidth: 120 }}>

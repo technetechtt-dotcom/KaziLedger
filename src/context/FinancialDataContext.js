@@ -1209,6 +1209,22 @@ export function FinancialDataProvider({ children }) {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp()
           });
+          const unitCost = parseFloat(product.cost ?? product.unitCost ?? 0) || 0;
+          const cogs = unitCost * (parseFloat(item.quantity) || 0);
+          if (cogs > 0) {
+            try {
+              const { postCogsJournal } = await import('../services/glPosting');
+              await postCogsJournal(user.uid, {
+                costAmount: cogs,
+                date: invoiceData.invoiceDate,
+                productName: product.name,
+                source: 'quote_invoice',
+                sourceId: docRef.id
+              });
+            } catch (cogsErr) {
+              console.warn('COGS post skipped', cogsErr);
+            }
+          }
         }
       }
       
